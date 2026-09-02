@@ -1,0 +1,721 @@
+openapi: 3.1.0
+info:
+  title: "未发生事件管理局 — 愿望 API"
+  version: "0.1.0"
+  description: |
+    来源：S01、S02、S03、S04、S05 时序图。所有端点均可追溯到某个 Step 或 EX 用例。
+    三条贯穿全域的约定：
+    1. 创建与转写、理解分属不同事务——先落库用户原话，LLM 失败不回滚（S01 Step 14）。
+    2. 越权访问返回 404 而非 403，避免泄露「该 ID 存在」（S05 EX-3.1）。
+    3. 响应中不含 total、completed_count、overdue_days 等任何可用于制造压迫感的统计字段。
+servers:
+  - url: "https://{host}/api/v1"
+    variables:
+      host:
+        default: "localhost:8000"
+security:
+  - bearerAuth: []
+tags:
+  - name: wishes
+    description: "种下、浏览、整理愿望"
+  - name: timing
+    description: "约定时机与顺延"
+  - name: steps
+    description: "最小下一步与准备过程"
+
+paths:
+  /wishes:
+    post:
+      operationId: seedWish
+      tags: [wishes]
+      summary: "种下一个愿望"
+      description: "来源：S01 Step 13 → Step 19、S02 Step 12 → Step 21。source=text 时必须给 text；source=voice 时必须给 media_id 并由服务端转写。"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source]
+              properties:
+                source:
+                  type: string
+                  enum: [text, voice]
+                text:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+                  description: "source=text 时必填"
+                media_id:
+                  type: string
+                  format: uuid
+                  description: "source=voice 时必填，须为 status=ready 的 audio 媒体"
+                photo_media_ids:
+                  type: array
+                  maxItems: 9
+                  items: { type: string, format: uuid }
+      responses:
+        '201':
+          description: "愿望已落库。degraded=true 表示 LLM 或 ASR 降级（EX-16.1 / EX-15.1），此时 question 为 null 且前端跳过轻问直接进入花园"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeedWishResult' }
+        '422':
+          description: "text 为空或超过 500 字（WISH_TEXT_INVALID，S01 EX-13.1）；或 media_id 状态不是 ready（MEDIA_INVALID）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    get:
+      operationId: listWishes
+      tags: [wishes]
+      summary: "未发生之地列表"
+      description: "来源：S05.1 Step 2 → Step 5。游标分页；河流视图由前端按 next_trigger_at 重排，不额外请求（S05.1 Step 14）。"
+      parameters:
+        - name: state
+          in: query
+          description: "不传或传 all 表示全部"
+          schema:
+            type: string
+            enum: [all, seeded, brewing, wind, going, happened, let_go]
+            default: all
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: "列表。items 为空即空状态（EX-6.1 / EX-9.1），响应不含任何计数字段"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/WishCard' }
+                  next_cursor:
+                    type: [string, "null"]
+        '400':
+          description: "游标无法解码或指向已删除记录（CURSOR_INVALID，S05 EX-2.1）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /wishes/{wish_id}:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+    get:
+      operationId: getWish
+      tags: [wishes]
+      summary: "愿望详情"
+      description: "来源：S03 Step 1、S04 Step 1。含原话、理解结果、时机、准备过程时间线与对话。"
+      responses:
+        '200':
+          description: "详情"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WishDetail' }
+        '404':
+          description: "不存在或不属于当前用户（WISH_NOT_FOUND，S05 EX-3.1）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      operationId: amendWish
+      tags: [wishes]
+      summary: "改一改它"
+      description: "来源：S05.2 Step 15、S02 EX-15.1 的「我自己写下来」。修改 title 或 original_text 时向 amendments 表写入原始快照，seeded_at 永不变。"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                title: { type: string, minLength: 1, maxLength: 60 }
+                original_text: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: "已更新，返回详情"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WishDetail' }
+        '404':
+          description: "不存在或不属于当前用户（WISH_NOT_FOUND）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    delete:
+      operationId: deleteWishPermanently
+      tags: [wishes]
+      summary: "彻底删除（不可恢复）"
+      description: "来源：S05.2 Step 25 → Step 31。先删对象存储再删数据库记录（S05.2 步骤说明）；幂等，重复删除仍返回 204（EX-30.1）。"
+      parameters:
+        - name: confirm
+          in: query
+          required: true
+          schema: { type: boolean, const: true }
+          description: "服务端强制的二次确认，缺失返回 400（EX-25.1）"
+      responses:
+        '204':
+          description: "已彻底删除，级联清除步骤、对话、媒体、提醒与记忆页。对象存储部分删除失败时仍返回 204，残留 key 转入 orphan_objects 由每日任务重试（EX-28.1）——不因存储故障阻塞用户的删除意图"
+        '400':
+          description: "缺少 confirm=true（CONFIRMATION_REQUIRED，EX-25.1）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /wishes/{wish_id}/answer:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+    post:
+      operationId: answerWishQuestion
+      tags: [wishes]
+      summary: "回答或跳过 Agent 的一句追问"
+      description: "来源：S01 Step 22 → Step 24、S02 Step 24 → Step 26。skipped=true 时保留 pending_question 供未来再问，但当次不再追问。"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [answer]
+                  properties:
+                    answer: { type: string, minLength: 1, maxLength: 500 }
+                - type: object
+                  required: [skipped]
+                  properties:
+                    skipped: { type: boolean, const: true }
+                - type: object
+                  required: [action]
+                  properties:
+                    action:
+                      type: string
+                      enum: [keep_as_future]
+                      description: "S02 EX-18.2：用户确认把「当下日程」当作未来的事保留"
+      responses:
+        '200':
+          description: "已记录"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WishDetail' }
+        '404':
+          description: "不存在或不属于当前用户（WISH_NOT_FOUND）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /wishes/{wish_id}/understanding:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+    post:
+      operationId: retryWishUnderstanding
+      tags: [wishes]
+      summary: "补做愿望理解"
+      description: "来源：S01 EX-16.1。用户手动重试或 Scheduler 消费 pending_understanding 时调用；已被用户手动编辑过的字段不覆盖。"
+      responses:
+        '200':
+          description: "理解已补齐；degraded=true 表示本次仍失败"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeedWishResult' }
+        '404':
+          description: "不存在或不属于当前用户（WISH_NOT_FOUND）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /wishes/{wish_id}/transcription:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+    post:
+      operationId: retryTranscription
+      tags: [wishes]
+      summary: "再读一次这段话（重试语音转写）"
+      description: "来源：S02 EX-15.1、EX-15.2。原始音频永久保留，因此重试始终可用。"
+      responses:
+        '200':
+          description: "转写完成并继续理解；degraded=true 表示仍失败"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeedWishResult' }
+        '409':
+          description: "该愿望没有关联音频（NO_AUDIO_ATTACHED）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /wishes/{wish_id}/timing:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+    put:
+      operationId: setWishTiming
+      tags: [timing]
+      summary: "约定属于它的时机"
+      description: "来源：S03 Step 4 → Step 7。next_trigger_at 一律由服务端按用户时区计算，禁止前端传入（S03 步骤说明）。幂等。"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TimingInput' }
+      responses:
+        '200':
+          description: "已约定。type=none 时状态保持 seeded 且不再进入提醒队列（EX-4.1）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WishDetail' }
+        '422':
+          description: "参数非法：缺 value、日期不存在或 after_months 不在 {1,3,6,12}（TIMING_INVALID，EX-4.2）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /wishes/{wish_id}/ready:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+    post:
+      operationId: markWishReady
+      tags: [timing]
+      summary: "我好像准备好了"
+      description: "来源：S03 Step 20 → Step 22、S04 Step 2 → Step 4。状态转 wind；任意状态下用户主动点击均可，不要求时机已到。"
+      responses:
+        '200':
+          description: "状态已转为 wind"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WishDetail' }
+        '409':
+          description: "愿望已是 happened 终态（STATE_TRANSITION_NOT_ALLOWED）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /wishes/{wish_id}/defer:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+    post:
+      operationId: deferWish
+      tags: [timing]
+      summary: "还不是现在"
+      description: "来源：S03 EX-20.1。仅重算 next_trigger_at；数据库中不存在顺延次数字段，因此 UI 在结构上无法显示「已顺延 N 次」。"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                after_months:
+                  type: integer
+                  enum: [1, 3, 6, 12]
+                  default: 3
+      responses:
+        '200':
+          description: "已顺延，状态保持 brewing，排序位置不变"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WishDetail' }
+
+  /wishes/{wish_id}/pause:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+    post:
+      operationId: pauseWishReminders
+      tags: [timing]
+      summary: "暂时不提醒"
+      description: "来源：S05.2 Step 15 的整理半屏第 2 项。清除时机约定，状态回 seeded，并清空该愿望的待投递提醒。"
+      responses:
+        '200':
+          description: "已停止提醒"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WishDetail' }
+
+  /wishes/{wish_id}/back-to-brewing:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+    post:
+      operationId: moveWishBackToBrewing
+      tags: [timing]
+      summary: "先放回酝酿"
+      description: "来源：S05.2 Step 15 的整理半屏第 3 项、S04 EX-15.2 的三选项之一。仅 going 状态可用；已记录的准备过程时间线不清空。"
+      responses:
+        '200':
+          description: "状态回 brewing，时间线保留"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WishDetail' }
+        '409':
+          description: "当前状态不允许该迁移（STATE_TRANSITION_NOT_ALLOWED）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /wishes/{wish_id}/let-go:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+    post:
+      operationId: letGoWish
+      tags: [wishes]
+      summary: "安静放下"
+      description: "来源：S05.2 Step 17 → Step 21。同一事务内记录 let_go_at、清空 next_trigger_at 并删除所有 pending 提醒（S05.2 步骤说明）。响应文案禁止出现失败/放弃/未完成。"
+      responses:
+        '200':
+          description: "已安静放下，保留标题、原话与首次种下时间"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WishDetail' }
+        '409':
+          description: "愿望已是 happened 终态，不可回退（STATE_TRANSITION_NOT_ALLOWED，S05 EX-17.1）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /wishes/{wish_id}/recall:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+    post:
+      operationId: recallWish
+      tags: [wishes]
+      summary: "重新种下"
+      description: "来源：S07 Step 14 → Step 18。仅 let_go 状态可用；保留首次种下时间、标题、原话、照片、理解结果与准备过程，清空 let_go_at 与旧时机字段，状态回 seeded。"
+      responses:
+        '200':
+          description: "已重新种下，用户可继续复用 S03 约定时机"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WishDetail' }
+        '404':
+          description: "愿望不存在或不属于当前用户（WISH_NOT_FOUND，S07 EX-8.1）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: "当前状态不允许重新种下（STATE_TRANSITION_NOT_ALLOWED，S07 EX-10.1）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /wishes/{wish_id}/steps/next:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+    post:
+      operationId: requestNextStep
+      tags: [steps]
+      summary: "取下一个最小步骤"
+      description: "来源：S04 Step 5 → Step 11、Step 19 → Step 23。带 rejected_step_id 即「换一个更小的」（EX-13.1）。任一时刻只存在 1 个 proposed 步骤。"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rejected_step_id:
+                  type: string
+                  format: uuid
+                  description: "被拒绝的步骤，将置为 rejected 并永久排除"
+      responses:
+        '200':
+          description: "已生成步骤。degraded=true 表示 LLM 不可用（EX-8.1），此时 step 为 null 且状态保持 wind；source=fallback 表示用了内置兜底步骤（EX-8.2 / EX-13.2）"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [step, degraded]
+                properties:
+                  step:
+                    oneOf:
+                      - $ref: '#/components/schemas/WishStep'
+                      - type: "null"
+                  degraded: { type: boolean }
+        '409':
+          description: "愿望不在 wind 或 going 状态（STATE_TRANSITION_NOT_ALLOWED）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /wishes/{wish_id}/steps/{step_id}/done:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+      - name: step_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: markStepDone
+      tags: [steps]
+      summary: "做完了"
+      description: "来源：S04 Step 14 → Step 17。写入准备过程时间线并把状态转为 going。用 If-Match 承载乐观锁版本号。"
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string }
+          description: "当前 wish 的 version，用于并发控制（EX-15.1）"
+      responses:
+        '200':
+          description: "步骤已完成，时间线新增 1 条"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [timeline_entry, wish]
+                properties:
+                  timeline_entry: { $ref: '#/components/schemas/TimelineEntry' }
+                  wish: { $ref: '#/components/schemas/WishDetail' }
+        '409':
+          description: "版本不匹配，另一端已提交（STATE_CONFLICT，EX-15.1）。前端应静默重取详情，不向用户报错"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '412':
+          description: "缺少 If-Match 头（PRECONDITION_REQUIRED）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /wishes/{wish_id}/messages:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+    post:
+      operationId: sendWishMessage
+      tags: [steps]
+      summary: "与 Agent 对话"
+      description: "来源：S04 EX-23.1。同一通道承载多种意图：修改愿望（amend）、推进协助（assist）、疲惫信号（fatigue，触发 S03 EX-11.1 的 signal 类时机）。"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        '200':
+          description: "Agent 回复。intent=amend 时 wish 已更新且 amendments 留有原始快照；intent=fatigue 时该用户所有 signal 类时机被置为立即触发"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reply, intent, wish, degraded]
+                properties:
+                  reply: { type: [string, "null"] }
+                  intent:
+                    type: string
+                    enum: [chat, amend, assist, fatigue]
+                  wish: { $ref: '#/components/schemas/WishDetail' }
+                  degraded: { type: boolean }
+        '404':
+          description: "不存在或不属于当前用户（WISH_NOT_FOUND）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    WishId:
+      name: wish_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details:
+          type: object
+          additionalProperties: true
+
+    WishState:
+      type: string
+      enum: [seeded, brewing, wind, going, happened, let_go]
+      description: "刚种下 / 正在酝酿 / 风来了 / 正在发生 / 已经发生 / 安静放下。happened 为终态"
+
+    TimingInput:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [season, month_day, after_months, free_weekend, when_tired, none]
+        season:
+          type: string
+          enum: [spring, summer, autumn, winter]
+        month_day:
+          type: string
+          pattern: '^\d{4}-\d{2}(-\d{2})?$'
+          description: "某个月份（YYYY-MM）或某个纪念日（YYYY-MM-DD）"
+        after_months:
+          type: integer
+          enum: [1, 3, 6, 12]
+
+    Timing:
+      type: object
+      required: [type, label, trigger_kind]
+      properties:
+        type: { type: string }
+        label:
+          type: string
+          description: "卡面文案，如「正在等待合适的风：入冬」或「你说你会自己想起它」"
+        trigger_kind:
+          type: string
+          enum: [time, signal, none]
+          description: "signal 表示 when_tired，不由时间触发（S03 EX-11.1）"
+        next_trigger_at:
+          type: [string, "null"]
+          format: date-time
+          description: "服务端计算，signal 与 none 时为 null"
+
+    WishCard:
+      type: object
+      required: [id, title, seeded_at, state, timing, version]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        original_text_excerpt:
+          type: string
+          description: "原话摘要，卡面单行截断用"
+        seeded_at: { type: string, format: date-time }
+        let_go_at:
+          type: [string, "null"]
+          format: date-time
+          description: "安静放下时间。仅 state=let_go 时通常有值；历史兼容数据可为 null（S07 Step 3）"
+        state: { $ref: '#/components/schemas/WishState' }
+        timing: { $ref: '#/components/schemas/Timing' }
+        soft_deferred:
+          type: boolean
+          description: "true 表示本周提醒被预算顺延，前端显示「本周先不打扰你」（S03 EX-14.1）"
+        degraded_reason:
+          type: [string, "null"]
+          enum: [llm_failed, asr_failed, asr_empty, null]
+        version: { type: integer }
+    WishUnderstanding:
+      type: object
+      description: "LLM 结构化输出，经 Pydantic 二次校验后才落库；校验失败等同不可用（S01 EX-16.2）"
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [future_wish, near_term_todo]
+          description: "near_term_todo 触发 S02 EX-18.2 的询问式确认"
+        feeling:
+          type: string
+          description: "用户真正想要的感受，如 放松 / 陪伴 / 勇气 / 连接 / 成长"
+        conditions:
+          type: object
+          additionalProperties: true
+          description: "隐含条件，如 season、place、budget、companion"
+        smallest_step:
+          type: [string, "null"]
+          description: "首个最小可行动步骤"
+
+    WishStep:
+      type: object
+      required: [id, text, status, source]
+      properties:
+        id: { type: string, format: uuid }
+        text: { type: string }
+        status:
+          type: string
+          enum: [proposed, done, rejected]
+        est_minutes:
+          type: integer
+          maximum: 5
+          description: "模型自检字段，服务端校验 ≤5（S04 EX-8.2）"
+        involves_cost: { type: boolean }
+        involves_others: { type: boolean }
+        source:
+          type: string
+          enum: [llm, fallback]
+        completed_at: { type: [string, "null"], format: date-time }
+
+    TimelineEntry:
+      type: object
+      required: [id, text, completed_at]
+      properties:
+        id: { type: string, format: uuid }
+        text: { type: string }
+        completed_at: { type: string, format: date-time }
+
+    WishMessage:
+      type: object
+      required: [id, role, text, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        role:
+          type: string
+          enum: [user, agent]
+        text: { type: string }
+        intent:
+          type: [string, "null"]
+          enum: [chat, amend, assist, fatigue, null]
+        created_at: { type: string, format: date-time }
+
+    WishDetail:
+      allOf:
+        - $ref: '#/components/schemas/WishCard'
+        - type: object
+          properties:
+            original_text:
+              type: [string, "null"]
+              description: "用户原话。ASR 失败时为 null（S02 EX-15.1）"
+            audio_media_id: { type: [string, "null"], format: uuid }
+            photo_media_ids:
+              type: array
+              items: { type: string, format: uuid }
+            understanding:
+              oneOf:
+                - $ref: '#/components/schemas/WishUnderstanding'
+                - type: "null"
+            pending_question:
+              type: boolean
+              description: "true 表示有一句「待未来再问」的追问"
+            amended_from:
+              type: [string, "null"]
+              description: "「最初你说的是……」，来自 amendments 最早的一条快照（S04 EX-23.1）"
+            current_step:
+              oneOf:
+                - $ref: '#/components/schemas/WishStep'
+                - type: "null"
+            timeline:
+              type: array
+              items: { $ref: '#/components/schemas/TimelineEntry' }
+            messages:
+              type: array
+              items: { $ref: '#/components/schemas/WishMessage' }
+
+    SeedWishResult:
+      type: object
+      required: [wish, question, degraded]
+      properties:
+        wish: { $ref: '#/components/schemas/WishDetail' }
+        question:
+          type: [string, "null"]
+          description: "Agent 的一句追问，恰好 1 句；降级时为 null"
+        actions:
+          type: array
+          description: "S02 EX-18.2 的两个动作"
+          items:
+            type: string
+            enum: [keep_as_future, delete]
+        degraded:
+          type: boolean
+          description: "true 表示 LLM 或 ASR 降级，前端跳过轻问并显示纸色提示条"
+
+
+
+

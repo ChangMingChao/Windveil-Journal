@@ -1,0 +1,541 @@
+{
+  "$schema_note": "OpenLogos API 编排测试（Phase 3 Step 4b）。flow.case_id 复用 Step 4a 的 ST-* ID；结果写入 logos/resources/verify/test-results.jsonl。",
+  "scenario": "S04",
+  "name": "风来了，开始第一小步",
+  "source": {
+    "sequence": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S04-first-small-step.md",
+    "api": ["logos/resources/api/wishes.yaml"],
+    "test_cases": "logos/resources/test/core-S04-test-cases.md"
+  },
+  "external_dependencies": [
+    {
+      "name": "LLM",
+      "test_strategy": "mock-service",
+      "test_config": "本地 OpenAI 兼容 mock；模式含 ok / timeout / violating_step / amend / fatigue"
+    },
+    {
+      "name": "系统时钟",
+      "test_strategy": "fixed-value",
+      "test_config": "POST /api/test/clock 注入固定时间，用于 60 天停滞断言"
+    },
+    {
+      "name": "Web Push",
+      "test_strategy": "env-disable",
+      "test_config": "仅写 reminder_outbox；GET /api/test/outbox 断言停滞关心"
+    }
+  ],
+  "variables": {
+    "base_url": "${API_BASE_URL:-http://localhost:8000}",
+    "mock_base": "${AGENT_MOCK_BASE:-http://localhost:9100}"
+  },
+  "setup": [
+    { "step": "setup-1", "method": "POST", "url": "{{base_url}}/api/test/clock", "body": { "now": "2026-09-01T12:00:00+08:00" }, "expected_status": 204 },
+    { "step": "setup-2", "method": "PUT", "url": "{{mock_base}}/_control", "body": { "mode": "ok" }, "expected_status": 204 },
+    {
+      "step": "setup-3",
+      "description": "建号并准备一个 brewing 状态的愿望",
+      "method": "POST",
+      "url": "{{base_url}}/api/v1/auth/anonymous",
+      "expected_status": 201,
+      "extract": { "access_token": "body.access_token", "user_id": "body.user.id" }
+    }
+  ],
+  "teardown": [
+    { "step": "teardown-1", "method": "POST", "url": "{{base_url}}/api/test/clock", "body": { "now": null }, "expected_status": 204 },
+    {
+      "step": "teardown-2",
+      "method": "DELETE",
+      "url": "{{base_url}}/api/v1/wishes/{{item.id}}?confirm=true",
+      "headers": { "Authorization": "Bearer {{access_token}}" },
+      "for_each": "GET {{base_url}}/api/v1/wishes -> body.items",
+      "expected_status": [204, 404]
+    }
+  ],
+  "fragments": {
+    "seed_brewing_wish": [
+      {
+        "step": "种下愿望",
+        "method": "POST",
+        "url": "{{base_url}}/api/v1/wishes",
+        "headers": { "Authorization": "Bearer {{access_token}}" },
+        "body": { "source": "text", "text": "想一个人去海边待两天" },
+        "expected_status": 201,
+        "extract": { "wish_id": "body.wish.id", "seeded_at": "body.wish.seeded_at" }
+      },
+      {
+        "step": "设时机进入 brewing",
+        "method": "PUT",
+        "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing",
+        "headers": { "Authorization": "Bearer {{access_token}}" },
+        "body": { "type": "free_weekend" },
+        "expected_status": 200
+      }
+    ],
+    "advance_to_going": [
+      {
+        "step": "ready",
+        "method": "POST",
+        "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/ready",
+        "headers": { "Authorization": "Bearer {{access_token}}" },
+        "expected_status": 200,
+        "extract": { "version": "body.version" }
+      },
+      {
+        "step": "取步骤",
+        "method": "POST",
+        "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/steps/next",
+        "headers": { "Authorization": "Bearer {{access_token}}" },
+        "expected_status": 200,
+        "extract": { "step_id": "body.step.id" }
+      },
+      {
+        "step": "done → 进入 going",
+        "method": "POST",
+        "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/steps/{{step_id}}/done",
+        "headers": { "Authorization": "Bearer {{access_token}}", "If-Match": "{{version}}" },
+        "expected_status": 200,
+        "extract": { "version": "body.wish.version" }
+      }
+    ]
+  },
+  "flows": [
+    {
+      "case_id": "ST-S04-01",
+      "type": "normal",
+      "description": "完成第一小步并进入「正在发生」",
+      "covers_steps": "Step 1→23",
+      "steps": [
+        { "step": "前置：准备 brewing 愿望", "include": "fragment:seed_brewing_wish", "expected_status": 200 },
+        {
+          "step": "Step 2: 我好像准备好了",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/ready",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200,
+          "extract": { "version": "body.version" },
+          "assert": ["body.state == 'wind'"]
+        },
+        {
+          "step": "Step 5: 取一个最小下一步",
+          "mock": { "dependency": "LLM", "strategy": "mock-service", "config": "mode=ok" },
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/steps/next",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200,
+          "extract": { "step_id": "body.step.id" },
+          "assert": [
+            "body.degraded == false",
+            "body.step.status == 'proposed'",
+            "body.step.est_minutes <= 5",
+            "body.step.involves_cost == false",
+            "body.step.involves_others == false",
+            "body.step.source == 'llm'"
+          ]
+        },
+        {
+          "step": "Step 14: 带 If-Match 标记做完了",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/steps/{{step_id}}/done",
+          "headers": { "Authorization": "Bearer {{access_token}}", "If-Match": "{{version}}" },
+          "expected_status": 200,
+          "extract": { "version": "body.wish.version" },
+          "assert": [
+            "body.wish.state == 'going'",
+            "body.timeline_entry.completed_at != null",
+            "body.wish.timeline.length == 1"
+          ]
+        },
+        {
+          "step": "Step 19: 追加下一个步骤，任一时刻只有 1 个 proposed",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/steps/next",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200,
+          "assert": ["body.step.id != '{{step_id}}'"]
+        },
+        {
+          "step": "Step 23: 详情页无计划清单与截止日期字段",
+          "method": "GET",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200,
+          "assert": [
+            "body.current_step != null",
+            "!has(body, 'due_date')",
+            "!has(body, 'plan')",
+            "!has(body, 'progress')",
+            "body.timeline.length == 1"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S04-03",
+      "type": "exception",
+      "description": "LLM 不可用：step 为 null，状态保持 wind 不回退",
+      "covers": "EX-8.1",
+      "steps": [
+        { "step": "前置：brewing 愿望", "include": "fragment:seed_brewing_wish", "expected_status": 200 },
+        {
+          "step": "mock: LLM 超时",
+          "mock": { "dependency": "LLM", "strategy": "mock-service", "config": "mode=timeout" },
+          "method": "PUT",
+          "url": "{{mock_base}}/_control",
+          "body": { "mode": "timeout", "delay_ms": 6000 },
+          "expected_status": 204
+        },
+        {
+          "step": "Step 2: ready",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/ready",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200
+        },
+        {
+          "step": "EX-8.1: 取步骤降级",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/steps/next",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200,
+          "assert": ["body.step == null", "body.degraded == true"]
+        },
+        {
+          "step": "EX-8.1: 状态未回退",
+          "method": "GET",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200,
+          "assert": ["body.state == 'wind'", "body.current_step == null"]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S04-04",
+      "type": "exception",
+      "description": "LLM 返回违规步骤：重试后落到内置兜底",
+      "covers": "EX-8.2",
+      "steps": [
+        { "step": "前置：brewing 愿望", "include": "fragment:seed_brewing_wish", "expected_status": 200 },
+        {
+          "step": "mock: 连续返回 involves_cost=true",
+          "mock": { "dependency": "LLM", "strategy": "mock-service", "config": "mode=violating_step" },
+          "method": "PUT",
+          "url": "{{mock_base}}/_control",
+          "body": { "mode": "violating_step" },
+          "expected_status": 204
+        },
+        {
+          "step": "ready",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/ready",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200
+        },
+        {
+          "step": "EX-8.2: 最终返回合规的 fallback 步骤",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/steps/next",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200,
+          "assert": [
+            "body.step.source == 'fallback'",
+            "body.step.est_minutes <= 5",
+            "body.step.involves_cost == false",
+            "body.step.involves_others == false"
+          ]
+        },
+        {
+          "step": "EX-8.2: mock 记录到 2 次请求（首次 + 指出违反项后重试）",
+          "method": "GET",
+          "url": "{{mock_base}}/_stats",
+          "expected_status": 200,
+          "assert": ["body.chat_completions_calls == 2"]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S04-05",
+      "type": "exception",
+      "description": "换一个更小的：被拒步骤永不重现，无拒绝次数计数",
+      "covers": "EX-13.1",
+      "steps": [
+        { "step": "前置：进入 wind 并取一个步骤", "include": "fragment:seed_brewing_wish", "expected_status": 200 },
+        {
+          "step": "ready + 取步骤",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/ready",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200
+        },
+        {
+          "step": "取第一个步骤",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/steps/next",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200,
+          "extract": { "first_step_id": "body.step.id", "first_step_text": "body.step.text" }
+        },
+        {
+          "step": "EX-13.1: 换一个更小的",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/steps/next",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "body": { "rejected_step_id": "{{first_step_id}}" },
+          "expected_status": 200,
+          "assert": [
+            "body.step.id != '{{first_step_id}}'",
+            "body.step.text != '{{first_step_text}}'",
+            "body.step.est_minutes <= 5",
+            "!has(body, 'rejected_count')"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S04-06",
+      "type": "exception",
+      "description": "连续 3 次要求更小：不再调用 LLM，直接给最轻兜底",
+      "covers": "EX-13.2",
+      "steps": [
+        { "step": "前置：进入 wind", "include": "fragment:seed_brewing_wish", "expected_status": 200 },
+        {
+          "step": "ready",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/ready",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200
+        },
+        {
+          "step": "重置 mock 计数",
+          "method": "POST",
+          "url": "{{mock_base}}/_stats/reset",
+          "expected_status": 204
+        },
+        {
+          "step": "EX-13.2: 连续拒绝 3 次",
+          "repeat": 3,
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/steps/next",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "body": { "rejected_step_id": "{{last_step_id}}" },
+          "expected_status": 200,
+          "extract": { "last_step_id": "body.step.id" }
+        },
+        {
+          "step": "EX-13.2: 第 4 次不再调用 LLM",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/steps/next",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "body": { "rejected_step_id": "{{last_step_id}}" },
+          "expected_status": 200,
+          "extract": { "calls_before": "0" },
+          "assert": ["body.step.source == 'fallback'"]
+        },
+        {
+          "step": "EX-13.2: 断言最后一次未产生新的 LLM 调用",
+          "method": "GET",
+          "url": "{{mock_base}}/_stats",
+          "expected_status": 200,
+          "assert": ["body.chat_completions_calls <= 4"]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S04-07",
+      "type": "exception",
+      "description": "并发点击「做完了」：一个 200 一个 409，时间线只加一条",
+      "covers": "EX-15.1",
+      "steps": [
+        { "step": "前置：进入 wind 并取步骤", "include": "fragment:seed_brewing_wish", "expected_status": 200 },
+        {
+          "step": "ready",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/ready",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200,
+          "extract": { "version": "body.version" }
+        },
+        {
+          "step": "取步骤",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/steps/next",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200,
+          "extract": { "step_id": "body.step.id" }
+        },
+        {
+          "step": "EX-15.1: 并发两次 done，同一 If-Match",
+          "concurrent": 2,
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/steps/{{step_id}}/done",
+          "headers": { "Authorization": "Bearer {{access_token}}", "If-Match": "{{version}}" },
+          "expected_status_set": [200, 409],
+          "assert": [
+            "count_status(200) == 1",
+            "count_status(409) == 1",
+            "response_of(409).body.code == 'STATE_CONFLICT'"
+          ]
+        },
+        {
+          "step": "EX-15.1: 时间线只有 1 条",
+          "method": "GET",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200,
+          "assert": ["body.timeline.length == 1"]
+        },
+        {
+          "step": "UT-S04-03: 缺 If-Match 返回 412",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/steps/{{step_id}}/done",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 412,
+          "assert": ["body.code == 'PRECONDITION_REQUIRED'"]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S04-08",
+      "type": "exception",
+      "description": "「正在发生」满 60 天无动作：一条关心入箱且只发一次",
+      "covers": "EX-15.2",
+      "steps": [
+        { "step": "前置：进入 going", "include": "fragment:seed_brewing_wish", "expected_status": 200 },
+        {
+          "step": "ready → 取步骤 → done，进入 going",
+          "include": "fragment:advance_to_going",
+          "expected_status": 200
+        },
+        {
+          "step": "EX-15.2: 时钟推进 59 天，不应命中",
+          "mock": { "dependency": "系统时钟", "strategy": "fixed-value", "config": "POST /api/test/clock" },
+          "method": "POST",
+          "url": "{{base_url}}/api/test/clock",
+          "body": { "now": "2026-10-30T12:00:00+08:00" },
+          "expected_status": 204
+        },
+        {
+          "step": "调度一轮：无 stale_care",
+          "method": "POST",
+          "url": "{{base_url}}/api/test/scheduler/tick",
+          "expected_status": 200
+        },
+        {
+          "step": "断言无停滞关心",
+          "method": "GET",
+          "url": "{{base_url}}/api/test/outbox?user_id={{user_id}}",
+          "expected_status": 200,
+          "assert": ["count(body.items, 'kind', 'stale_care') == 0"]
+        },
+        {
+          "step": "EX-15.2: 推进到第 60 天",
+          "method": "POST",
+          "url": "{{base_url}}/api/test/clock",
+          "body": { "now": "2026-10-31T12:00:00+08:00" },
+          "expected_status": 204
+        },
+        {
+          "step": "调度一轮：产生 1 条关心",
+          "mock": { "dependency": "Web Push", "strategy": "env-disable", "config": "仅写 outbox" },
+          "method": "POST",
+          "url": "{{base_url}}/api/test/scheduler/tick",
+          "expected_status": 200
+        },
+        {
+          "step": "EX-15.2: 断言只有 1 条且占用周预算",
+          "method": "GET",
+          "url": "{{base_url}}/api/test/outbox?user_id={{user_id}}",
+          "expected_status": 200,
+          "assert": [
+            "count(body.items, 'kind', 'stale_care') == 1",
+            "body.delivered_count_this_week >= 1"
+          ]
+        },
+        {
+          "step": "EX-15.2: 再调度一轮不重复发送",
+          "method": "POST",
+          "url": "{{base_url}}/api/test/scheduler/tick",
+          "expected_status": 200
+        },
+        {
+          "step": "断言仍只有 1 条",
+          "method": "GET",
+          "url": "{{base_url}}/api/test/outbox?user_id={{user_id}}",
+          "expected_status": 200,
+          "assert": ["count(body.items, 'kind', 'stale_care') == 1"]
+        },
+        {
+          "step": "EX-15.2: 详情页不显示停滞天数",
+          "method": "GET",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200,
+          "assert": ["!has(body, 'stale_days')", "!has(body, 'progress')"]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S04-09",
+      "type": "exception",
+      "description": "推进过程中改变愿望本身：保留原话与时间线",
+      "covers": "EX-23.1",
+      "steps": [
+        { "step": "前置：进入 going 且时间线有 1 条", "include": "fragment:seed_brewing_wish", "expected_status": 200 },
+        { "step": "推进到 going", "include": "fragment:advance_to_going", "expected_status": 200 },
+        {
+          "step": "EX-23.1: 对话中修改愿望",
+          "mock": { "dependency": "LLM", "strategy": "mock-service", "config": "mode=amend" },
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/messages",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "body": { "text": "想改成和妹妹一起去" },
+          "expected_status": 200,
+          "assert": [
+            "body.intent == 'amend'",
+            "body.wish.state == 'going'",
+            "body.wish.amended_from == '想一个人去海边待两天'",
+            "body.wish.timeline.length == 1",
+            "body.wish.seeded_at == '{{seeded_at}}'"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S04-10",
+      "type": "exception",
+      "description": "先放回酝酿：时间线保留",
+      "covers": "EX-15.2 的三选项之一",
+      "steps": [
+        { "step": "前置：进入 going", "include": "fragment:seed_brewing_wish", "expected_status": 200 },
+        { "step": "推进到 going", "include": "fragment:advance_to_going", "expected_status": 200 },
+        {
+          "step": "back-to-brewing",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/back-to-brewing",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200,
+          "assert": ["body.state == 'brewing'", "body.timeline.length == 1"]
+        },
+        {
+          "step": "UT-S04-07: seeded 状态取步骤应 409",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/pause",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 200
+        },
+        {
+          "step": "409 校验",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/steps/next",
+          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "expected_status": 409,
+          "assert": ["body.code == 'STATE_TRANSITION_NOT_ALLOWED'"]
+        }
+      ]
+    }
+  ],
+  "not_orchestrated": [
+    { "case_id": "ST-S04-02", "reason": "从通知动作进入与 ST-S04-01 走同一组端点，编排层不可区分入口来源；由 ST-S03-01 的 ready 步骤 + 代码级 ST 覆盖" },
+    { "case_id": "ST-S04-11", "reason": "[manual] 对话区视觉：只呈现 1 个下一步卡" }
+  ]
+}

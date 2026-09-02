@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>原型 · 种下一个愿望（S01 / S02）— 未发生事件管理局</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600&family=Raleway:wght@300;400;500;600&display=swap');
+:root{
+  --paper:#FDFBF7; --card:#F5F0E1; --ink:#2C2620; --ink-soft:#5C5347; --clay:#92400E;
+  --mist-deep:#4A6572; --sprout-deep:#4F5C2C; --mist:#8FA5B0; --sprout:#6B7B3C;
+  --lamp:#E8B96B; --line:#E3DCCB;
+  --r-card:18px; --r-input:14px; --sh-card:0 6px 20px rgba(44,38,32,.06);
+  --f-h:'Lora','Noto Serif SC',Georgia,'Songti SC',serif;
+  --f-b:'Raleway','Noto Sans SC','PingFang SC','Microsoft YaHei',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#EFE9DC;color:var(--ink);font:400 16px/1.7 var(--f-b);
+  -webkit-font-smoothing:antialiased;padding:24px 16px 64px}
+h1,h2,h3{font-family:var(--f-h);font-weight:500;margin:0}
+.doc{max-width:1180px;margin:0 auto}
+.doc-head{margin-bottom:20px}
+.doc-head h1{font-size:24px}
+.doc-head p{color:var(--ink-soft);font-size:14px;margin:6px 0 0;max-width:60ch}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 22px}
+.tab{font:400 14px/1 var(--f-b);min-height:44px;padding:0 16px;border:1px solid var(--line);
+  border-radius:999px;background:var(--paper);color:var(--ink-soft);cursor:pointer;
+  transition:color .18s ease-out,border-color .18s ease-out,background-color .18s ease-out}
+.tab:hover{color:var(--ink);border-color:var(--clay)}
+.tab[aria-selected="true"]{border-color:var(--clay);color:var(--clay);background:var(--card)}
+.tab:focus-visible,button:focus-visible,textarea:focus-visible,a:focus-visible{
+  outline:2px solid var(--clay);outline-offset:2px}
+.stage{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+.frame{width:375px;flex:0 0 375px}
+.frame > figcaption{font-size:13px;color:var(--ink-soft);margin-bottom:8px}
+.screen{position:relative;height:720px;background:var(--paper);border:1px solid var(--line);
+  border-radius:28px;box-shadow:0 10px 34px rgba(44,38,32,.10);overflow:hidden;display:flex;
+  flex-direction:column}
+.sbar{flex:0 0 auto;padding:14px 16px 0;font-size:12px;color:var(--ink-soft);
+  display:flex;justify-content:space-between}
+.body{flex:1 1 auto;overflow:auto;padding:16px}
+.note{max-width:64ch;font-size:13px;color:var(--ink-soft);margin:10px 0 0}
+</style>
+</head>
+<body>
+<style>
+/* ---------- 组件 ---------- */
+.lamp{width:64px;height:64px;margin:0 auto 22px;display:block;opacity:0;
+  animation:lampIn 600ms cubic-bezier(.22,.61,.36,1) forwards}
+@keyframes lampIn{to{opacity:1}}
+.title-h{font-family:var(--f-h);font-size:28px;line-height:1.35;margin-bottom:12px}
+.lead{color:var(--ink-soft);font-size:16px}
+.meta{font-size:13px;color:var(--ink-soft)}
+.center{display:flex;flex-direction:column;justify-content:center;height:100%;text-align:center;
+  padding:0 8px}
+.btn{font:500 16px/1 var(--f-b);min-height:44px;padding:0 22px;border-radius:999px;border:1px solid transparent;
+  cursor:pointer;transition:background-color .18s ease-out,color .18s ease-out,border-color .18s ease-out}
+.btn-primary{background:var(--clay);color:#fff}
+.btn-primary:hover{background:#7C360C}
+.btn-primary[disabled]{background:#DCD3C2;color:#7A7263;cursor:not-allowed}
+.btn-ghost{background:transparent;color:var(--clay);border-color:var(--line)}
+.btn-ghost:hover{border-color:var(--clay)}
+.btn-text{background:none;border:none;color:var(--clay);font:400 14px/1 var(--f-b);
+  min-height:44px;padding:0 6px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.field{width:100%;min-height:120px;background:var(--paper);border:1px solid var(--line);
+  border-radius:var(--r-input);padding:14px;font:400 16px/1.7 var(--f-b);color:var(--ink);resize:vertical;
+  transition:border-color .18s ease-out}
+.field:focus{border-color:var(--clay);outline:none}
+.dots{display:flex;gap:8px;justify-content:center;margin-top:18px}
+.dots i{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.dots i.on{background:var(--mist)}
+.tools{display:flex;gap:10px;align-items:center;margin:12px 0 18px}
+.icn{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--paper);
+  display:grid;place-items:center;cursor:pointer;transition:border-color .18s ease-out}
+.icn:hover{border-color:var(--clay)}
+.icn svg{width:24px;height:24px;stroke:var(--ink-soft);fill:none;stroke-width:1.6}
+.wish{background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);
+  padding:16px;box-shadow:var(--sh-card)}
+.wish h3{font-size:20px;line-height:1.4}
+.wish .quote{font-style:italic;color:var(--ink-soft);margin:8px 0 12px;font-size:16px;line-height:1.75}
+.badge{display:inline-flex;align-items:center;gap:7px;font-size:13px}
+.badge .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.s-seed .dot{background:var(--mist)} .s-seed{color:var(--ink-soft)}
+.s-brew .dot{background:var(--mist-deep)} .s-brew{color:var(--mist-deep)}
+.s-wind .dot{background:var(--lamp);box-shadow:0 0 12px rgba(232,185,107,.85)} .s-wind{color:var(--clay)}
+.s-going .dot{background:var(--sprout)} .s-going{color:var(--sprout-deep)}
+.banner{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;
+  font-size:14px;color:var(--ink-soft);display:flex;gap:10px;align-items:flex-start;margin-bottom:14px}
+.tabbar{flex:0 0 auto;border-top:1px solid var(--line);background:var(--paper);
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:8px 12px 14px}
+.tabbar span{font-size:13px;color:var(--ink-soft);text-align:center;min-height:44px;
+  display:grid;place-items:center;cursor:pointer}
+.tabbar span.on{color:var(--clay)}
+.seed-fab{width:56px;height:56px;border-radius:50%;background:var(--clay);color:#fff;border:none;
+  font:500 14px/1 var(--f-b);cursor:pointer;box-shadow:var(--sh-card)}
+.spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;
+  border-radius:50%;display:inline-block;vertical-align:-3px;animation:spin 900ms linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hide{display:none!important}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+  .lamp{opacity:1}
+}
+</style>
+<div class="doc">
+  <div class="doc-head">
+    <h1>原型 · 种下一个愿望</h1>
+    <p>场景 S01（新用户建立自己的未发生之地）与 S02（随手种下一个愿望并被理解）。视口 375px。
+      设计令牌来自 <code>design-system.json</code>。可交互：切换屏幕、跳过温柔问题、输入后启用「种下」、
+      提交后的 loading 与 Agent 轻问。</p>
+  </div>
+
+  <div class="tabs" role="tablist" aria-label="屏幕切换">
+    <button class="tab" role="tab" aria-selected="true" data-go="w1">W1 欢迎</button>
+    <button class="tab" role="tab" aria-selected="false" data-go="w2">W2 温柔问题</button>
+    <button class="tab" role="tab" aria-selected="false" data-go="w3">W3 种下（S02 主屏）</button>
+    <button class="tab" role="tab" aria-selected="false" data-go="w4">W4 Agent 轻问</button>
+    <button class="tab" role="tab" aria-selected="false" data-go="g1">花园 · 正常落地</button>
+    <button class="tab" role="tab" aria-selected="false" data-go="g2">花园 · Agent 降级</button>
+    <button class="tab" role="tab" aria-selected="false" data-go="g3">花园 · 空状态</button>
+  </div>
+
+  <div class="stage">
+    <figure class="frame" style="margin:0">
+      <figcaption id="cap">W1 欢迎 — 一盏渐亮的灯，一个「开始」</figcaption>
+      <div class="screen">
+        <div class="sbar"><span>21:04</span><span>未发生事件管理局</span></div>
+
+        <!-- W1 -->
+        <div class="body scr" id="w1">
+          <div class="center">
+            <svg class="lamp" viewBox="0 0 24 24" role="img" aria-label="一盏亮起的灯">
+              <path d="M12 2v3" stroke="#8FA5B0" stroke-width="1.4" fill="none"/>
+              <path d="M6 9a6 6 0 0 1 12 0c0 3-2 4.2-2 6H8c0-1.8-2-3-2-6z" fill="#E8B96B"
+                    stroke="#92400E" stroke-width="1.2"/>
+              <path d="M9 19h6" stroke="#92400E" stroke-width="1.4" fill="none"/>
+            </svg>
+            <h2 class="title-h">为那些还没发生、<br>但值得被认真对待的事，<br>留一盏灯。</h2>
+            <p class="lead">这里只属于你。没有截止，没有催促。</p>
+            <div style="margin-top:26px"><button class="btn btn-primary" data-go="w2">开始</button></div>
+          </div>
+        </div>
+
+        <!-- W2 -->
+        <div class="body scr hide" id="w2">
+          <div style="display:flex;justify-content:flex-end">
+            <button class="btn-text" data-go="w3">先直接写一个愿望</button>
+          </div>
+          <h2 class="title-h" style="margin-top:12px">最近有什么事，<br>你一直想做但还没做？</h2>
+          <p class="meta">可以只写一句，也可以留空。</p>
+          <label class="meta" for="q1" style="display:block;margin:16px 0 6px">你的回答（可留空）</label>
+          <textarea class="field" id="q1" placeholder="想起什么就写什么……"></textarea>
+          <div style="display:flex;gap:10px;margin-top:16px">
+            <button class="btn btn-primary" data-go="w3">继续</button>
+            <button class="btn btn-ghost" data-go="w3">这题跳过</button>
+          </div>
+          <div class="dots" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
+          <p class="note">纸点只表示位置，不显示百分比、不显示「还剩 2 题」。</p>
+        </div>
+        <!-- W3 -->
+        <div class="body scr hide" id="w3">
+          <p class="meta">2026 年 9 月的一个傍晚</p>
+          <h2 class="title-h" style="margin:10px 0 14px">今天，<br>有什么想在未来发生的事吗？</h2>
+          <label class="meta" for="wishInput" style="display:block;margin-bottom:6px">写下它（最多 500 字）</label>
+          <textarea class="field" id="wishInput" maxlength="500"
+            placeholder="等压力没这么大的时候，想去海边待两天。"></textarea>
+          <div class="tools">
+            <button class="icn" id="micBtn" aria-label="长按录音，最多 60 秒">
+              <svg viewBox="0 0 24 24"><path d="M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3z"/>
+              <path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+            </button>
+            <button class="icn" aria-label="添加一张照片">
+              <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/>
+              <circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4 4 3 3-2 4 3"/></svg>
+            </button>
+            <span class="meta" id="micHint">长按说一句也可以</span>
+          </div>
+          <button class="btn btn-primary" id="seedBtn" disabled aria-disabled="true">种下</button>
+          <p class="note">输入为空时按钮禁用，不弹校验提示、不出现红字。</p>
+        </div>
+
+        <!-- W4 -->
+        <div class="body scr hide" id="w4">
+          <p class="meta">已经替你收好了</p>
+          <div class="wish" style="margin:12px 0 18px">
+            <h3 id="w4Title">去海边待两天</h3>
+            <p class="meta" style="margin:6px 0 0">种下于 2026 年 9 月</p>
+            <p class="quote" id="w4Quote">「等压力没这么大的时候，想去海边待两天。」</p>
+            <span class="badge s-seed"><i class="dot"></i>刚种下 · 一颗还没发芽的种子</span>
+          </div>
+          <p style="font-family:var(--f-h);font-size:20px;line-height:1.5">
+            这更像是一次独处，<br>还是想和某个人一起去？</p>
+          <label class="meta" for="ansInput" style="display:block;margin:14px 0 6px">你的回答（可以不答）</label>
+          <textarea class="field" id="ansInput" style="min-height:80px"></textarea>
+          <div style="display:flex;gap:10px;margin-top:14px">
+            <button class="btn btn-primary" data-go="g1">回答</button>
+            <button class="btn btn-ghost" data-go="g1">先不说</button>
+          </div>
+          <p class="note">追问恰好 1 句。「先不说」记为「待未来再问」，本次不再追问。</p>
+        </div>
+
+        <!-- 花园 · 正常 / 降级 / 空 -->
+        <div class="body scr hide" id="g1">
+          <h2 class="title-h" style="font-size:22px;margin-bottom:14px">未发生之地</h2>
+          <div class="wish" style="margin-bottom:14px">
+            <h3>去海边待两天</h3>
+            <p class="meta" style="margin:6px 0 0">种下于 2026 年 9 月</p>
+            <p class="quote">「等压力没这么大的时候……」</p>
+            <span class="badge s-seed"><i class="dot"></i>刚种下</span>
+          </div>
+          <div class="wish">
+            <h3>重新开始画画</h3>
+            <p class="meta" style="margin:6px 0 0">种下于 2026 年 4 月</p>
+            <p class="quote">「想找回那种手上有颜色的感觉。」</p>
+            <span class="badge s-brew"><i class="dot"></i>正在等待合适的风：一个空闲的周末</span>
+          </div>
+        </div>
+        <div class="body scr hide" id="g2">
+          <div class="banner" role="status">
+            <svg viewBox="0 0 24 24" style="width:20px;height:20px;flex:0 0 auto;stroke:var(--clay);
+              fill:none;stroke-width:1.5"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><circle cx="12" cy="12" r="3"/></svg>
+            <span>先替你收好了，我稍后再慢慢读它。</span>
+          </div>
+          <div class="wish">
+            <h3>等压力没这么大的时候，想去海</h3>
+            <p class="meta" style="margin:6px 0 0">种下于 2026 年 9 月</p>
+            <p class="quote">「等压力没这么大的时候，想去海边待两天。」</p>
+            <span class="badge s-seed"><i class="dot"></i>刚种下</span>
+          </div>
+          <p class="note">Agent 不可用时：标题回退为原话前 20 字，原话完整保留，无错误码、无「重试」按钮。</p>
+        </div>
+
+        <div class="body scr hide" id="g3">
+          <div class="center">
+            <svg viewBox="0 0 24 24" style="width:52px;height:52px;margin:0 auto 18px;stroke:var(--mist);
+              fill:none;stroke-width:1.3" role="img" aria-label="一个空的花盆">
+              <path d="M6 9h12l-1.5 10.5A2 2 0 0 1 14.5 21h-5a2 2 0 0 1-2-1.5z"/><path d="M4 9h16"/></svg>
+            <h2 class="title-h" style="font-size:22px">这里还什么都没有。</h2>
+            <p class="lead">想到什么，随时来种下它。</p>
+            <div style="margin-top:22px"><button class="btn btn-primary" data-go="w3">种下</button></div>
+          </div>
+          <p class="note">空状态不含「你还没有……」句式、无进度条、无补齐引导。</p>
+        </div>
+
+        <div class="tabbar">
+          <span class="on">未发生之地</span>
+          <button class="seed-fab" data-go="w3" aria-label="种下一个愿望">种下</button>
+          <span>已发生之书</span>
+        </div>
+      </div>
+    </figure>
+
+    <div style="flex:1 1 320px;min-width:280px">
+      <h2 style="font-size:18px;margin-bottom:10px">这一屏在验收什么</h2>
+      <ul style="font-size:14px;color:var(--ink-soft);line-height:1.85;padding-left:18px;margin:0">
+        <li>W2 顶部「先直接写一个愿望」可在任意题跳过，跳过后不再出现补答提示或红点。</li>
+        <li>W3 空输入时「种下」为 <code>disabled</code> + <code>aria-disabled</code>，不弹校验。</li>
+        <li>提交进入 loading 且按钮禁用，≤5 秒内出结果（原型模拟 1.2 秒）。</li>
+        <li>W4 追问恰好 1 句，两个动作都直达花园。</li>
+        <li>状态徽标 = 圆点 + 文字 + 形状描述，颜色不作唯一指示。</li>
+        <li>装饰色 <code>#8FA5B0</code> / <code>#E8B96B</code> / <code>#6B7B3C</code> 实测对比度低于 4.5:1，
+          原型中只用于圆点与光晕，文本一律使用 <code>#2C2620</code> / <code>#5C5347</code> /
+          <code>#92400E</code> / <code>#4A6572</code> / <code>#4F5C2C</code>。</li>
+        <li>全部图标为内联 SVG（24×24），无 emoji；可点击元素 ≥44×44px。</li>
+        <li><code>prefers-reduced-motion: reduce</code> 下动效全部关闭。</li>
+      </ul>
+      <p class="note">对应验收条件见 <code>../1-feature-specs/core-01-seeding-design.md</code>。</p>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var caps = {
+    w1: 'W1 欢迎 — 一盏渐亮的灯，一个「开始」',
+    w2: 'W2 温柔问题 — 每题可留空，顶部可直接跳过',
+    w3: 'W3 种下（= S02 主屏）— 空输入时「种下」禁用',
+    w4: 'W4 Agent 轻问 — 恰好 1 句，可「先不说」',
+    g1: '花园 · 正常落地 — 新卡在顶部',
+    g2: '花园 · Agent 降级 — 标题回退为原话前 20 字',
+    g3: '花园 · 空状态 — 无「你还没有……」句式'
+  };
+  var scrs = document.querySelectorAll('.scr');
+  var tabs = document.querySelectorAll('.tab');
+  function go(id) {
+    scrs.forEach(function (s) { s.classList.toggle('hide', s.id !== id); });
+    tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.go === id)); });
+    if (caps[id]) document.getElementById('cap').textContent = caps[id];
+    // 首次体验流（W1/W2/W4）不显示底部导航，避免中断感
+    document.querySelector('.tabbar').classList.toggle('hide', ['w1', 'w2', 'w4'].indexOf(id) > -1);
+    var b = document.querySelector('.screen .body:not(.hide)');
+    if (b) b.scrollTop = 0;
+  }
+  document.querySelectorAll('[data-go]').forEach(function (el) {
+    el.addEventListener('click', function () { go(el.dataset.go); });
+  });
+
+  // W3：输入后启用「种下」，提交后 loading → W4
+  var input = document.getElementById('wishInput');
+  var seed = document.getElementById('seedBtn');
+  input.addEventListener('input', function () {
+    var empty = input.value.trim().length === 0;
+    seed.disabled = empty;
+    seed.setAttribute('aria-disabled', String(empty));
+  });
+  seed.addEventListener('click', function () {
+    if (seed.disabled) return;
+    var text = input.value.trim();
+    seed.disabled = true;
+    seed.innerHTML = '<span class="spinner" aria-hidden="true"></span> 正在替你收好';
+    setTimeout(function () {
+      document.getElementById('w4Quote').textContent = '「' + text + '」';
+      document.getElementById('w4Title').textContent =
+        text.length > 10 ? text.slice(0, 10) : text;
+      seed.textContent = '种下';
+      seed.setAttribute('aria-disabled', 'true');
+      go('w4');
+    }, 1200);
+  });
+
+  // 语音：长按 → 显示剩余秒数（上限 60 秒）
+  var mic = document.getElementById('micBtn'), hint = document.getElementById('micHint'), t = null, left = 60;
+  function start() {
+    left = 60; hint.textContent = '正在听…… 还可以说 60 秒';
+    t = setInterval(function () {
+      left -= 1; hint.textContent = '正在听…… 还可以说 ' + left + ' 秒';
+      if (left <= 0) stop();
+    }, 1000);
+  }
+  function stop() {
+    if (!t) return; clearInterval(t); t = null;
+    hint.textContent = '松手即提交（原型不真实录音）';
+  }
+  mic.addEventListener('mousedown', start); mic.addEventListener('mouseup', stop);
+  mic.addEventListener('mouseleave', stop); mic.addEventListener('touchstart', start);
+  mic.addEventListener('touchend', stop);
+
+  go('w1');
+})();
+</script>
+
+
+
+</body>
+</html>

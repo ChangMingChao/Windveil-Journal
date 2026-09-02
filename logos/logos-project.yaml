@@ -1,0 +1,223 @@
+project:
+  name: "111"
+  description: 未发生事件管理局 — 个人愿望陪伴产品：收集那些你不想错过的未来，并在你准备好时，陪它们慢慢发生。
+  methodology: OpenLogos
+tech_stack:
+  architecture: 前后端分离 + 单体后端 + 单数据库 + 独立调度进程
+  frontend:
+    language: TypeScript 5.x
+    framework: React 19 + Vite 6
+    router: React Router 7
+    data: TanStack Query 5
+    styling: Tailwind CSS 4（@theme 映射 design-system.json 令牌）
+    pwa: vite-plugin-pwa (Workbox)
+    test: Vitest + Testing Library + Playwright
+    package_manager: pnpm
+  backend:
+    language: Python 3.12
+    framework: FastAPI 0.115+
+    validation: Pydantic v2
+    orm: SQLAlchemy 2.0 (async, aiosqlite)
+    migration: Alembic（SQLite 下改列须用 batch_alter_table）
+    auth: 自管 JWT（Argon2id + access/refresh，refresh 存 httpOnly Cookie）
+    scheduler: APScheduler 3.x 独立进程 + 单写者文件锁（SQLite 无咨询锁）
+    test: pytest + pytest-asyncio + httpx.AsyncClient（无需外部服务）
+    package_manager: uv
+  database: SQLite 3.40+（单文件，WAL；无 RLS，隔离改为仓储层注入 + 应用层 owner_guard；understanding 存 JSON 文本）
+  object_storage: S3 兼容（本地 MinIO，生产可换 R2 / 云 OSS）
+  llm:
+    protocol: OpenAI 兼容 /v1/chat/completions
+    client: openai Python SDK（base_url / api_key / model 由环境变量注入）
+    note: 供应商中立为硬约束；结构化输出用 response_format json_schema + Pydantic 二次校验；超时 5s 后返回 None 触发产品级降级
+  asr:
+    protocol: OpenAI 兼容 /v1/audio/transcriptions
+    note: 失败时保留原始音频，支持重试转写
+  api_style: REST /api/v1，OpenAPI 3.1 由 FastAPI 自动产出（前端类型由此生成）
+  deploy_units:
+    - 静态站点
+    - api (uvicorn)
+    - scheduler (单活)
+  deploy_constraint: Docker Compose；环境变量注入全部配置与密钥；Alembic 先迁移后切流；数据库为单文件，备份即复制文件 + ENCRYPTION_KEY 分开存放
+external_dependencies:
+  - name: LLM
+    provider: 任意 OpenAI 兼容端点（供应商未定，代码不得写死）
+    used_in:
+      - S01-新用户建立自己的未发生之地
+      - S02-随手种下一个愿望并被理解
+      - S04-风来了，开始第一小步
+      - S06-把发生过的事写成一页记忆
+    test_strategy: mock-service
+    test_config: 本地 OpenAI 兼容 mock，返回固定结构化 JSON；提供强制失败开关以覆盖降级验收条件
+  - name: 语音转写 ASR
+    provider: 任意 OpenAI 兼容端点
+    used_in:
+      - S02-随手种下一个愿望并被理解
+    test_strategy: mock-service
+    test_config: 同 LLM mock 服务；失败模式用于验证保留原始音频与重试转写
+  - name: Web Push
+    provider: 浏览器推送服务（VAPID）
+    used_in:
+      - S03-为一个愿望约定属于它的时机
+      - S04-风来了，开始第一小步
+    test_strategy: env-disable
+    test_config: APP_ENV=test 时不真实投递，仅写 reminder_outbox；配套 GET /api/test/outbox?user_id= 断言周预算与去重
+  - name: 邮件服务
+    provider: SMTP 或供应商 API（抽象为 EmailSender）
+    used_in:
+      - S03-为一个愿望约定属于它的时机
+    test_strategy: test-api
+    test_config: GET /api/test/latest-email?to={email}
+  - name: 对象存储
+    provider: S3 兼容（本地 MinIO）
+    used_in:
+      - S02-随手种下一个愿望并被理解
+      - S06-把发生过的事写成一页记忆
+    test_strategy: fixed-value
+    test_config: 本地 MinIO 真实调用，固定 bucket 与凭证；预签名 URL 正确性本身是被测行为，不 mock
+  - name: 系统时钟
+    provider: 服务层 Clock 抽象
+    used_in:
+      - S03-为一个愿望约定属于它的时机
+      - S04-风来了，开始第一小步
+      - S06-把发生过的事写成一页记忆
+    test_strategy: fixed-value
+    test_config: 测试注入固定时间，用于时机到达、60 天停滞、发生日期早于种下日期等断言
+feature_counter:
+  next_id: 5
+features:
+  - id: F01
+    name: 愿望记录与理解
+    module: core
+    spec: core-01
+  - id: F02
+    name: 时机与陪伴推进
+    module: core
+    spec: core-02
+  - id: F03
+    name: 未发生之地浏览与整理
+    module: core
+    spec: core-02
+  - id: F04
+    name: 已发生之书
+    module: core
+    spec: core-03
+scenarios:
+  - id: S01
+    name: 新用户建立自己的未发生之地
+    feature: F01
+  - id: S02
+    name: 随手种下一个愿望并被理解
+    feature: F01
+  - id: S03
+    name: 为一个愿望约定属于它的时机
+    feature: F02
+  - id: S04
+    name: 风来了，开始第一小步
+    feature: F02
+  - id: S05
+    name: 回看未发生之地并重新整理
+    feature: F03
+  - id: S06
+    name: 把发生过的事写成一页记忆
+    feature: F04
+  - id: S07
+    name: 唤回一个被安静放下的愿望
+    feature: F03
+scenario_counter:
+  next_id: 8
+modules:
+  - id: core
+    name: 核心功能
+    lifecycle: launched
+    deployment_required: true
+deployment_gates:
+  core:
+    deployment_required: true
+    smoke_required: true
+    environments:
+      - staging
+      - production
+    plan: logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md
+    notes: production 需人类明确授权后执行并复跑 smoke；smoke 失败必须回滚，不允许先上线再修
+resource_index:
+  - path: logos/resources/prd/1-product-requirements/core-01-requirements.md
+    desc: 未发生事件管理局需求文档。涉及产品定位、产品人格与设计原则、目标用户、6 条用户痛点（P01-P06）、7 个核心场景（S01-S07）及其 GIVEN/WHEN/THEN 验收条件、技术约束与「不做」清单时必读。
+  - path: logos/resources/prd/2-product-design/1-feature-specs/core-00-information-architecture.md
+    desc: 信息架构与全局交互规格。涉及产品类型判断、页面结构与路由、底部导航、愿望卡全局状态机、提醒周预算、文案词典、Agent 全局行为规范、可访问性基线时必读。
+  - path: logos/resources/prd/2-product-design/1-feature-specs/core-01-seeding-design.md
+    desc: 「种下一个愿望」产品设计（S01 首次体验、S02 随手种下）。涉及首次体验流、温柔问题与跳过、输入区与语音、Agent 轻问、交互级验收条件时必读。
+  - path: logos/resources/prd/2-product-design/1-feature-specs/core-02-unhappened-place-design.md
+    desc: 「未发生之地」产品设计（S03 约定时机、S04 第一小步、S05.1 浏览、S05.2 重新整理）。涉及花园/河流视图、状态筛选、详情页、时机 6 选项、准备过程时间线、整理与彻底删除时必读。
+  - path: logos/resources/prd/2-product-design/1-feature-specs/core-03-book-of-happened-design.md
+    desc: 「已发生之书」产品设计（S06）。涉及「它已经发生了」半屏、记忆页草稿与阅读态、书架、Agent 草拟降级、发生日期早于种下日期的处理时必读。
+  - path: logos/resources/prd/2-product-design/2-page-design/design-system.json
+    desc: UI/UX 设计系统令牌（design_system_mode=generated，由 ui-ux-pro-max 生成后收敛）。涉及配色、字体、圆角、动效、状态色板、WCAG 对比度实测结论、反模式清单时必读；所有原型与后续前端实现必须以此为唯一视觉事实源。
+  - path: logos/resources/prd/2-product-design/2-page-design/core-01-seeding-prototype.html
+    desc: S01/S02 可交互原型。W1 欢迎、W2 温柔问题（含跳过）、W3 种下（空态禁用与 loading）、W4 Agent 轻问、花园正常/降级/空状态。
+  - path: logos/resources/prd/2-product-design/2-page-design/core-02-unhappened-place-prototype.html
+    desc: S03/S04/S05 可交互原型。花园与河流视图、状态筛选与 URL 同步、愿望详情、时机选择半屏、第一小步与时间线、整理半屏与删除二次确认。
+  - path: logos/resources/prd/2-product-design/2-page-design/core-03-book-of-happened-prototype.html
+    desc: S06 可交互原型。「它已经发生了」半屏（单日/区间、早于种下日期的询问确认）、记忆页草稿与降级态、阅读态、已发生之书书架。
+  - path: logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md
+    desc: 系统架构概要（全局唯一，后续修改始终更新此文件）。涉及架构模式与系统架构图、React+FastAPI 技术选型及理由、LLM 供应商中立抽象与降级机制、提醒调度与周预算、隐私与 RLS 数据隔离、非功能性约束、外部依赖测试策略、部署交接项时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-00-scenario-overview.md
+    desc: 场景实现概览索引。涉及场景地图与状态、F01-F04 功能分组、场景依赖关系与跨场景强耦合、从时序图浮现的 32 个 API 清单、EX 编号跨文档引用约定、建模发现的 3 个待补设计缺口时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-onboarding-first-wish.md
+    desc: S01 新用户建立自己的未发生之地场景时序图。涉及匿名建号、温柔问题与跳过、先落库原话再调 LLM 的事务边界、Agent 降级路径时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S02-seed-wish.md
+    desc: S02 随手种下一个愿望并被理解场景时序图。涉及媒体预签名直传、ASR 转写与失败重试、当下日程的识别与处置、孤儿媒体清理时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S03-set-timing.md
+    desc: S03 为一个愿望约定属于它的时机场景时序图。涉及 6 种时机类型与 next_trigger_at 计算、Scheduler 咨询锁、每周 3 条提醒预算与顺延、Push/邮件双通道兜底、信号类触发时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S04-first-small-step.md
+    desc: S04 风来了开始第一小步场景时序图。涉及最小步骤生成与三项合规自检、更小步骤替换与上限、乐观锁并发、愿望修订保留原话、60 天停滞关心时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-browse-and-tidy.md
+    desc: S05 回看未发生之地并重新整理场景时序图（S05.1 浏览 / S05.2 整理两图）。涉及 RLS 隔离与越权返回 404、视图纯前端重排、放下时清空提醒队列、彻底删除的先删对象后删记录顺序时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S06-write-memory-page.md
+    desc: S06 把发生过的事写成一页记忆场景时序图。涉及记忆草稿生成与降级、提醒停止与状态转换解耦、发生日期早于种下日期的宽容处理、发布幂等时必读。
+  - path: logos/resources/api/auth.yaml
+    desc: 认证与个人空间 API 规格（OpenAPI 3.1，7 个端点）。涉及匿名建号、邮箱绑定、登录/刷新/登出、GET /me 的 onboarded_at 语义、温柔问题提交时必读。
+  - path: logos/resources/api/media.yaml
+    desc: 媒体上传 API 规格（OpenAPI 3.1，2 个端点）。涉及预签名 PUT 直传、上传完成校验、音频 10MB 与图片 8MB 上限时必读。
+  - path: logos/resources/api/wishes.yaml
+    desc: 愿望 API 规格（OpenAPI 3.1，17 个端点）。涉及种下/列表/详情/修改/彻底删除、追问回答、补理解与重试转写、6 种时机、ready/defer/pause/back-to-brewing/let-go 状态迁移、最小步骤与乐观锁 If-Match、Agent 对话意图时必读。
+  - path: logos/resources/api/memories.yaml
+    desc: 已发生之书 API 规格（OpenAPI 3.1，5 个端点）。涉及记忆草稿创建、编辑保存、收进书里的幂等发布、书架分页与 lived_pages、发生日期早于种下时间的 warning 机制时必读。
+  - path: logos/resources/api/system.yaml
+    desc: 系统与测试后门 API 规格（OpenAPI 3.1，5 个端点）。涉及健康检查、outbox 断言、邮件断言、固定时钟注入、手动触发调度一轮时必读；/api/test/* 仅 APP_ENV=test 注册。
+  - path: logos/resources/database/schema.sql
+    desc: 数据库完整 Schema（PostgreSQL 17，17 张表 / 29 个索引 / 15 条 RLS 策略）。涉及表结构与字段语义（SQLite 类型约定：TEXT 主键 / ISO8601 时间 / INTEGER 布尔）、应用层 AES-256-GCM 加密列约定、愿望状态机约束、提醒去重与周预算的结构性保证、无 RLS 后的两道应用层隔离防线、索引设计理由时必读。
+  - path: logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md
+    desc: 部署方案与 smoke 策略。涉及 Docker Compose 三运行单元拓扑、环境变量与密钥清单（含 PGCRYPTO_KEY 不可重建风险）、三个数据库角色创建、PostgreSQL 语句日志必须关闭的隐私要求、发布顺序与 Alembic 两阶段迁移、回滚策略、12 项部署后检查、13 项 smoke 覆盖清单与「LLM 降级也算通过」的分层断言时必读。
+  - path: logos/resources/test/core-S01-test-cases.md
+    desc: S01 新用户建立自己的未发生之地测试用例（UT-S01-01~26 / ST-S01-01~10，含 2 个 [manual]）。涉及匿名建号、温柔问题字段边界、users 两条 CHECK、先落库后调 LLM 的事务断言、降级标题回退时必读。
+  - path: logos/resources/test/core-S02-test-cases.md
+    desc: S02 随手种下一个愿望并被理解测试用例（UT-S02-01~25 / ST-S02-01~13）。涉及媒体大小边界、预签名有效期、ASR 失败与空文本区分、当下日程判定、孤儿媒体清理时必读。
+  - path: logos/resources/test/core-S03-test-cases.md
+    desc: S03 为一个愿望约定属于它的时机测试用例（UT-S03-01~28 / ST-S03-01~14）。涉及 6 种时机参数校验、周预算上限与顺延排序键、去重唯一索引、退避序列、Push/邮件双通道、失败不计额度时必读。
+  - path: logos/resources/test/core-S04-test-cases.md
+    desc: S04 风来了开始第一小步测试用例（UT-S04-01~27 / ST-S04-01~11）。涉及单 proposed 唯一索引、步骤三项合规自检、拒绝上限与兜底库、If-Match 乐观锁 409、60 天停滞边界、愿望修订保留原话时必读。
+  - path: logos/resources/test/core-S05-test-cases.md
+    desc: S05 回看未发生之地并重新整理测试用例（UT-S05-01~27 / ST-S05-01~16）。涉及列表响应无统计字段、RLS 三条隔离断言、越权返回 404、放下清空提醒队列、先删对象后删记录、删除幂等时必读。
+  - path: logos/resources/test/core-S06-test-cases.md
+    desc: S06 把发生过的事写成一页记忆测试用例（UT-S06-01~32 / ST-S06-01~15）。涉及日期边界与未来日期拦截、早于种下日期的 warning 机制、全字段可空、edited_fields 防覆盖、发布幂等与 lived_pages 时必读。
+  - path: logos/resources/test/smoke/core-smoke-test-cases.md
+    desc: 部署后冒烟测试用例（SMOKE-core-01~18）。涉及健康检查、密钥与测试后门关闭、语句日志关闭、迁移与 RLS 验证、关键链路、加密落地与日志无明文、smoke 数据自清理，以及「LLM 降级只告警不判 FAIL」的分层断言与 code 阶段 runner 闭环要求时必读。
+  - path: logos/resources/scenario/core-00-orchestration-index.json
+    desc: API 编排测试总索引。涉及编排全局约定（case_id 复用 ST-* / step 标签对应时序图 / reporter 写入路径 / 幂等 setup-teardown / 仅 APP_ENV=test 可运行）、LLM 与 ASR mock 服务的控制面契约、覆盖统计、以及 3 个待确认项（对象存储 fixed-value 语义、Web Push env-disable 覆盖缺口、缺 PATCH /api/v1/me 端点）时必读。
+  - path: logos/resources/scenario/core-S01-onboarding.json
+    desc: S01 API 编排测试（7 个 flow）。涉及匿名建号→温柔问题→种下→追问的完整链路、跳过分支、LLM 超时与非法 JSON 降级、字段边界与 401 断言时必读。
+  - path: logos/resources/scenario/core-S02-seed-wish.json
+    desc: S02 API 编排测试（10 个 flow）。涉及预签名直传三步、ASR 失败与空文本、LLM 降级、当下日程的两个动作分支、媒体边界与跨用户 404 时必读。
+  - path: logos/resources/scenario/core-S03-timing.json
+    desc: S03 API 编排测试（10 个 flow）。涉及时钟注入 + scheduler tick + outbox 后门的组合断言、周预算 3 条上限与顺延排序键、同一时机去重、邮件兜底文案、defer 无计数字段时必读。
+  - path: logos/resources/scenario/core-S04-first-step.json
+    desc: S04 API 编排测试（9 个 flow）。涉及 ready→取步骤→If-Match done 的链路、LLM 违规步骤重试与兜底、连续拒绝上限、并发 409、60 天停滞边界（59/60 天对照）、愿望修订保留原话时必读。
+  - path: logos/resources/scenario/core-S05-browse-tidy.json
+    desc: S05 API 编排测试（12 个 flow）。涉及列表无统计字段断言、游标分页无重叠、放下清空提醒、彻底删除全链路与对象消失、跨账号越权一律 404、确认参数与幂等删除时必读。
+  - path: logos/resources/scenario/core-S06-memory-page.json
+    desc: S06 API 编排测试（13 个 flow）。涉及标记已发生即停提醒但状态仍 going、草稿编辑与幂等发布、早于种下日期的 warning 两段式、未来日期硬拦、补草拟不覆盖 edited_fields、照片超限整体不保存时必读。
+  - path: logos/resources/implementation/implementation-manifest.md
+    desc: 实现清单。涉及六维打分结果与 7 个批次的分批策略、Batch 1 已交付的业务代码与测试代码文件职责映射、覆盖用例 ID、运行结果与 skip 语义说明、sourceRoots 与 verify.pre_run_command 配置变更、Step 5 自检结论时必读。
+conventions:
+  - 遵循 OpenLogos 三层推进模型（Why → What → How）
+  - 每次变更必须先创建 logos/changes/ 变更提案

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="未发生事件管理局">
+  <rect width="64" height="64" rx="14" fill="#FDFBF7" />
+  <path d="M32 46V28" stroke="#6B7B3C" stroke-width="3" stroke-linecap="round" />
+  <path d="M32 30c-6-1-9-5-9-10 5 0 9 3 9 10Z" fill="#6B7B3C" />
+  <path d="M32 34c6-1 9-5 9-10-5 0-9 3-9 10Z" fill="#8FA5B0" />
+  <circle cx="32" cy="49" r="2.5" fill="#92400E" />
+</svg>

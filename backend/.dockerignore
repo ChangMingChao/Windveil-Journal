@@ -1,0 +1,16 @@
+# .dockerignore：镜像里不该出现测试库、虚拟环境和任何本地密钥
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+tests/
+.env
+.env.*
+*.db
+*.db-wal
+*.db-shm
+.smoke*
+.scheduler.lock
+!entrypoint.sh

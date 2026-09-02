@@ -1,0 +1,105 @@
+openapi: 3.1.0
+info:
+  title: "未发生事件管理局 — 媒体上传 API"
+  version: "0.1.0"
+  description: |
+    来源：S02 Step 3 → Step 11。音频与照片一律由前端直传对象存储，服务端只签发预签名 URL 并在回调时校验。
+    理由见 S02 步骤说明：单实例 uvicorn 转发 10MB 音频会长时间占用 worker，而本产品写入本就稀疏。
+servers:
+  - url: "https://{host}/api/v1"
+    variables:
+      host:
+        default: "localhost:8000"
+security:
+  - bearerAuth: []
+tags:
+  - name: media
+    description: "预签名上传与上传完成校验"
+
+paths:
+  /media/upload-url:
+    post:
+      operationId: createMediaUploadUrl
+      tags: [media]
+      summary: "申请预签名 PUT 地址"
+      description: "来源：S02 Step 3 → Step 4。有效期 10 分钟，过期由 EX-5.1 处理。"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, content_type, size_bytes]
+              properties:
+                kind:
+                  type: string
+                  enum: [audio, image]
+                content_type:
+                  type: string
+                  description: "audio 允许 audio/webm、audio/mp4、audio/mpeg；image 允许 image/jpeg、image/png、image/webp"
+                size_bytes:
+                  type: integer
+                  minimum: 1
+                  description: "audio 上限 10485760（10MB），image 上限 8388608（8MB）"
+      responses:
+        '201':
+          description: "已签发上传地址"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [media_id, upload_url, expires_at]
+                properties:
+                  media_id: { type: string, format: uuid }
+                  upload_url:
+                    type: string
+                    format: uri
+                    description: "预签名 PUT 地址，前端直传，不经过本服务"
+                  expires_at: { type: string, format: date-time }
+        '422':
+          description: "kind 与 content_type 不匹配，或 size_bytes 超限（MEDIA_INVALID）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /media/{media_id}/complete:
+    post:
+      operationId: completeMediaUpload
+      tags: [media]
+      summary: "声明上传完成并由服务端校验对象"
+      description: "来源：S02 Step 7 → Step 11。服务端对对象做 HEAD 校验存在性、大小与 MIME，通过后置 status=ready。"
+      parameters:
+        - name: media_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: "校验通过，媒体可被愿望或记忆页引用"
+        '404':
+          description: "media_id 不存在或不属于当前用户（MEDIA_NOT_FOUND）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          description: "对象不存在、超过大小上限或 MIME 不在白名单（MEDIA_INVALID，EX-8.1）。服务端删除该对象并置 status=rejected"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details:
+          type: object
+          additionalProperties: true

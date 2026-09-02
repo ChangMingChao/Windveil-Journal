@@ -1,0 +1,267 @@
+{
+  "$schema_note": "OpenLogos API 编排测试（Phase 3 Step 4b）。flow.case_id 复用 Step 4a 的 ST-* ID；结果写入 logos/resources/verify/test-results.jsonl。",
+  "scenario": "S07",
+  "name": "唤回一个被安静放下的愿望",
+  "source": {
+    "sequence": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S07-recall-let-go-wish.md",
+    "api": ["logos/resources/api/wishes.yaml"],
+    "test_cases": "logos/resources/test/core-S07-test-cases.md"
+  },
+  "external_dependencies": [],
+  "variables": {
+    "base_url": "${API_BASE_URL:-http://localhost:8000}"
+  },
+  "setup": [
+    {
+      "step": "setup-1",
+      "description": "建立账号 A 与账号 B（B 用于隔离断言）",
+      "method": "POST",
+      "url": "{{base_url}}/api/v1/auth/anonymous",
+      "expected_status": 201,
+      "extract": { "token_a": "body.access_token" }
+    },
+    {
+      "step": "setup-2",
+      "method": "POST",
+      "url": "{{base_url}}/api/v1/auth/anonymous",
+      "expected_status": 201,
+      "extract": { "token_b": "body.access_token" }
+    }
+  ],
+  "teardown": [
+    {
+      "step": "teardown-1",
+      "method": "DELETE",
+      "url": "{{base_url}}/api/v1/wishes/{{item.id}}?confirm=true",
+      "headers": { "Authorization": "Bearer {{token_a}}" },
+      "for_each": "GET {{base_url}}/api/v1/wishes -> body.items",
+      "expected_status": [204, 404]
+    }
+  ],
+  "fragments": {
+    "seed_and_let_go": [
+      {
+        "step": "准备愿望：种下",
+        "method": "POST",
+        "url": "{{base_url}}/api/v1/wishes",
+        "headers": { "Authorization": "Bearer {{token_a}}" },
+        "body": { "source": "text", "text": "只是想在晚上有一小段时间重新拿起画笔" },
+        "expected_status": 201,
+        "extract": { "wish_id": "body.wish.id", "seeded_at": "body.wish.seeded_at" }
+      },
+      {
+        "step": "准备愿望：设时机以产生后续可清空字段",
+        "method": "PUT",
+        "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing",
+        "headers": { "Authorization": "Bearer {{token_a}}" },
+        "body": { "type": "season", "season": "winter" },
+        "expected_status": 200
+      },
+      {
+        "step": "准备愿望：安静放下",
+        "method": "POST",
+        "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/let-go",
+        "headers": { "Authorization": "Bearer {{token_a}}" },
+        "expected_status": 200,
+        "extract": { "let_go_at": "body.let_go_at" },
+        "assert": [
+          "body.state == 'let_go'",
+          "body.seeded_at == variables.seeded_at",
+          "body.let_go_at != null"
+        ]
+      }
+    ]
+  },
+  "flows": [
+    {
+      "case_id": "ST-S07-01",
+      "name": "浏览安静放下区",
+      "steps": [
+        { "use_fragment": "seed_and_let_go" },
+        {
+          "step": "Step 2: GET /api/v1/wishes?state=let_go&limit=20",
+          "method": "GET",
+          "url": "{{base_url}}/api/v1/wishes?state=let_go&limit=20",
+          "headers": { "Authorization": "Bearer {{token_a}}" },
+          "expected_status": 200,
+          "assert": [
+            "body.items[*].state all == 'let_go'",
+            "body.items contains wish_id",
+            "body.items[*].let_go_at is sorted desc nulls_last",
+            "body has no key total",
+            "body has no key count"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S07-02",
+      "name": "打开唤回半屏",
+      "steps": [
+        { "use_fragment": "seed_and_let_go" },
+        {
+          "step": "Step 8: GET /api/v1/wishes/{id}",
+          "method": "GET",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}",
+          "headers": { "Authorization": "Bearer {{token_a}}" },
+          "expected_status": 200,
+          "assert": [
+            "body.state == 'let_go'",
+            "body.original_text != null",
+            "body.seeded_at == variables.seeded_at",
+            "body.let_go_at == variables.let_go_at"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S07-03",
+      "name": "重新种下",
+      "steps": [
+        { "use_fragment": "seed_and_let_go" },
+        {
+          "step": "Step 14: POST /api/v1/wishes/{id}/recall",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/recall",
+          "headers": { "Authorization": "Bearer {{token_a}}" },
+          "expected_status": 200,
+          "assert": [
+            "body.state == 'seeded'",
+            "body.let_go_at == null",
+            "body.timing.trigger_kind == 'none'",
+            "body.timing.next_trigger_at == null",
+            "body.seeded_at == variables.seeded_at",
+            "body.original_text contains '画笔'"
+          ]
+        },
+        {
+          "step": "Step 16: pending outbox 已清零",
+          "method": "GET",
+          "url": "{{base_url}}/api/test/outbox?wish_id={{wish_id}}",
+          "headers": { "Authorization": "Bearer {{token_a}}" },
+          "expected_status": 200,
+          "assert": ["body.items where status == 'pending' length == 0"]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S07-04",
+      "name": "唤回后重新约定时机",
+      "steps": [
+        { "use_fragment": "seed_and_let_go" },
+        {
+          "step": "Step 14: 先重新种下",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/recall",
+          "headers": { "Authorization": "Bearer {{token_a}}" },
+          "expected_status": 200
+        },
+        {
+          "step": "Step 21: PUT /api/v1/wishes/{id}/timing",
+          "method": "PUT",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing",
+          "headers": { "Authorization": "Bearer {{token_a}}" },
+          "body": { "type": "after_months", "after_months": 3 },
+          "expected_status": 200,
+          "assert": [
+            "body.state == 'brewing'",
+            "body.seeded_at == variables.seeded_at",
+            "body.timing.next_trigger_at != null"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S07-05",
+      "name": "安静放下区为空",
+      "steps": [
+        {
+          "step": "EX-6.1: GET 空 let_go 列表",
+          "method": "GET",
+          "url": "{{base_url}}/api/v1/wishes?state=let_go",
+          "headers": { "Authorization": "Bearer {{token_a}}" },
+          "expected_status": 200,
+          "assert": ["body.items length == 0", "body.next_cursor == null", "body has no key total"]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S07-06",
+      "name": "访问他人的安静放下愿望",
+      "steps": [
+        {
+          "step": "准备用户 B 的愿望",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes",
+          "headers": { "Authorization": "Bearer {{token_b}}" },
+          "body": { "source": "text", "text": "用户 B 的安静放下愿望" },
+          "expected_status": 201,
+          "extract": { "b_wish_id": "body.wish.id" }
+        },
+        {
+          "step": "准备用户 B 安静放下",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{b_wish_id}}/let-go",
+          "headers": { "Authorization": "Bearer {{token_b}}" },
+          "expected_status": 200
+        },
+        {
+          "step": "EX-8.1: 用户 A 访问用户 B 详情",
+          "method": "GET",
+          "url": "{{base_url}}/api/v1/wishes/{{b_wish_id}}",
+          "headers": { "Authorization": "Bearer {{token_a}}" },
+          "expected_status": 404,
+          "assert": ["body.code == 'WISH_NOT_FOUND'"]
+        },
+        {
+          "step": "EX-8.1: 用户 A 重新种下用户 B 愿望",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{b_wish_id}}/recall",
+          "headers": { "Authorization": "Bearer {{token_a}}" },
+          "expected_status": 404,
+          "assert": ["body.code == 'WISH_NOT_FOUND'"]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S07-07",
+      "name": "卡片状态已变化",
+      "steps": [
+        { "use_fragment": "seed_and_let_go" },
+        {
+          "step": "第一次重新种下成功",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/recall",
+          "headers": { "Authorization": "Bearer {{token_a}}" },
+          "expected_status": 200
+        },
+        {
+          "step": "EX-10.1: 第二次重新种下返回 409",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/recall",
+          "headers": { "Authorization": "Bearer {{token_a}}" },
+          "expected_status": 409,
+          "assert": ["body.code == 'STATE_TRANSITION_NOT_ALLOWED'"]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S07-08",
+      "name": "再放一会儿",
+      "not_orchestrated": "前端无副作用交互：不发写请求，由 UI 单元测试 UT-S07-19 与人工验证覆盖；接口层无对应 API。"
+    }
+  ],
+  "not_orchestrated": [
+    {
+      "case_id": "ST-S07-09",
+      "reason": "人工视觉验证：检查 375 / 768 / 1024 / 1440px 下的文案、色彩和计数压力缺失。"
+    }
+  ],
+  "coverage": {
+    "st_defined_total": 9,
+    "st_orchestrated": 7,
+    "st_manual": 1,
+    "st_code_level_only": 1,
+    "note": "ST-S07-08 是前端无副作用交互，不产生 HTTP flow；ST-S07-09 为人工视觉验证。"
+  }
+}

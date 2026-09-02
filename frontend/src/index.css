@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/* design-system.json → tokens。Tailwind 4 用 @theme 直接映射设计令牌，
+   前端不再手写第二套颜色常量——令牌只有一个来源。 */
+@theme {
+  --color-paper: #fdfbf7;
+  --color-card: #f5f0e1;
+  --color-ink: #2c2620;
+  --color-ink-soft: #5c5347;
+  --color-clay: #92400e;
+  --color-mist: #8fa5b0;
+  --color-mist-deep: #4a6572;
+  --color-sprout: #6b7b3c;
+  --color-sprout-deep: #4f5c2c;
+  --color-lamp: #e8b96b;
+  --color-line: #e3dccb;
+
+  --font-heading: "Lora", "Noto Serif SC", Georgia, "Songti SC", serif;
+  --font-body: "Raleway", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+
+  --radius-card: 18px;
+  --radius-input: 14px;
+
+  --shadow-card: 0 6px 20px rgba(44, 38, 32, 0.06);
+  --shadow-lamp: 0 0 28px rgba(232, 185, 107, 0.45);
+}
+
+html {
+  background: var(--color-paper);
+}
+
+body {
+  margin: 0;
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.7;
+  /* 纸张颗粒：靠极低透明度叠加，不形成可见噪点（texture.grain_opacity = 0.05） */
+  background-color: var(--color-paper);
+  background-image: radial-gradient(rgba(44, 38, 32, 0.05) 0.5px, transparent 0.5px);
+  background-size: 3px 3px;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-heading);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+/* 动效规则：只动 transform / opacity；reduced-motion 下全部关掉 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

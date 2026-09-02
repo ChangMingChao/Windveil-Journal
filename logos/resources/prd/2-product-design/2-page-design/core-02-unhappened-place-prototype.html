@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>原型 · 未发生之地（S03 / S04 / S05）— 未发生事件管理局</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600&family=Raleway:wght@300;400;500;600&display=swap');
+:root{
+  --paper:#FDFBF7; --card:#F5F0E1; --ink:#2C2620; --ink-soft:#5C5347; --clay:#92400E;
+  --mist-deep:#4A6572; --sprout-deep:#4F5C2C; --mist:#8FA5B0; --sprout:#6B7B3C;
+  --lamp:#E8B96B; --line:#E3DCCB;
+  --r-card:18px; --r-input:14px; --sh-card:0 6px 20px rgba(44,38,32,.06);
+  --f-h:'Lora','Noto Serif SC',Georgia,'Songti SC',serif;
+  --f-b:'Raleway','Noto Sans SC','PingFang SC','Microsoft YaHei',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#EFE9DC;color:var(--ink);font:400 16px/1.7 var(--f-b);padding:24px 16px 64px}
+h1,h2,h3{font-family:var(--f-h);font-weight:500;margin:0}
+.doc{max-width:1180px;margin:0 auto}
+.doc-head h1{font-size:24px}
+.doc-head p{color:var(--ink-soft);font-size:14px;margin:6px 0 0;max-width:62ch}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 22px}
+.tab{font:400 14px/1 var(--f-b);min-height:44px;padding:0 16px;border:1px solid var(--line);
+  border-radius:999px;background:var(--paper);color:var(--ink-soft);cursor:pointer;
+  transition:color .18s ease-out,border-color .18s ease-out,background-color .18s ease-out}
+.tab:hover{color:var(--ink);border-color:var(--clay)}
+.tab[aria-selected="true"]{border-color:var(--clay);color:var(--clay);background:var(--card)}
+.tab:focus-visible,button:focus-visible,textarea:focus-visible{outline:2px solid var(--clay);outline-offset:2px}
+.stage{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+.frame{width:375px;flex:0 0 375px;margin:0}
+.frame figcaption{font-size:13px;color:var(--ink-soft);margin-bottom:8px}
+.screen{position:relative;height:760px;background:var(--paper);border:1px solid var(--line);
+  border-radius:28px;box-shadow:0 10px 34px rgba(44,38,32,.10);overflow:hidden;display:flex;flex-direction:column}
+.sbar{padding:14px 16px 0;font-size:12px;color:var(--ink-soft);display:flex;justify-content:space-between}
+.body{flex:1 1 auto;overflow:auto;padding:16px}
+.note{max-width:64ch;font-size:13px;color:var(--ink-soft);margin:10px 0 0}
+.title-h{font-family:var(--f-h);font-size:22px;line-height:1.4}
+.meta{font-size:13px;color:var(--ink-soft)}
+.quote{font-style:italic;color:var(--ink-soft);font-size:16px;line-height:1.75}
+.btn{font:500 16px/1 var(--f-b);min-height:44px;padding:0 20px;border-radius:999px;border:1px solid transparent;
+  cursor:pointer;transition:background-color .18s ease-out,border-color .18s ease-out,color .18s ease-out}
+.btn-primary{background:var(--clay);color:#fff}
+.btn-primary:hover{background:#7C360C}
+.btn-ghost{background:transparent;color:var(--clay);border-color:var(--line)}
+.btn-ghost:hover{border-color:var(--clay)}
+.btn-text{background:none;border:none;color:var(--clay);font:400 14px/1 var(--f-b);min-height:44px;
+  padding:0 6px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<style>
+/* ---------- 花园 ---------- */
+.topline{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.views{display:flex;gap:14px}
+.views button{background:none;border:none;font:400 15px/1 var(--f-b);color:var(--ink-soft);
+  min-height:44px;padding:0 2px;cursor:pointer;border-bottom:2px solid transparent}
+.views button.on{color:var(--clay);border-bottom-color:var(--clay)}
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px;
+  scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{white-space:nowrap;font:400 14px/1 var(--f-b);min-height:44px;padding:0 14px;border-radius:999px;
+  border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);cursor:pointer;
+  transition:border-color .18s ease-out,color .18s ease-out}
+.chip:hover{border-color:var(--clay)}
+.chip.on{border-color:var(--clay);color:var(--clay);background:var(--card)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.wish{background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);padding:14px;
+  box-shadow:var(--sh-card);cursor:pointer;transition:border-color .18s ease-out,box-shadow .18s ease-out}
+.wish:hover{border-color:var(--clay);box-shadow:0 8px 24px rgba(44,38,32,.10)}
+.wish h3{font-size:17px;line-height:1.4}
+.wish .q1{font-style:italic;color:var(--ink-soft);font-size:14px;margin:6px 0 10px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grid .wish:nth-child(even){margin-top:16px}
+.badge{display:inline-flex;align-items:flex-start;gap:7px;font-size:12.5px;line-height:1.5}
+.badge .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;margin-top:5px}
+.s-seed{color:var(--ink-soft)} .s-seed .dot{background:var(--mist)}
+.s-brew{color:var(--mist-deep)} .s-brew .dot{background:var(--mist-deep)}
+.s-wind{color:var(--clay)} .s-wind .dot{background:var(--lamp);animation:glow 2400ms ease-in-out infinite}
+.s-going{color:var(--sprout-deep)} .s-going .dot{background:var(--sprout)}
+.s-done{color:var(--sprout-deep)} .s-done .dot{background:var(--sprout-deep)}
+.s-let{color:var(--ink-soft)} .s-let .dot{background:#C9C1AE}
+@keyframes glow{0%,100%{box-shadow:0 0 6px rgba(232,185,107,.5)}50%{box-shadow:0 0 16px rgba(232,185,107,.95)}}
+.softmark{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);
+  margin-top:8px;padding:4px 8px;border-radius:999px;background:rgba(232,185,107,.18)}
+.river{position:relative;padding-left:26px}
+.river::before{content:"";position:absolute;left:9px;top:4px;bottom:4px;width:2px;background:var(--mist);
+  opacity:.55}
+.river .wish{margin-bottom:14px}
+.river .wish::before{content:"";position:absolute;left:5px;width:10px;height:10px;border-radius:50%;
+  background:var(--paper);border:2px solid var(--mist);margin-top:16px}
+/* ---------- 详情 / 半屏 ---------- */
+.sec{border-top:1px solid var(--line);padding-top:14px;margin-top:16px}
+.sec h4{font:500 15px/1.4 var(--f-b);margin:0 0 8px;color:var(--ink)}
+.tl{list-style:none;margin:0;padding:0}
+.tl li{position:relative;padding:0 0 14px 20px;font-size:14.5px;color:var(--ink)}
+.tl li::before{content:"";position:absolute;left:0;top:8px;width:8px;height:8px;border-radius:50%;
+  background:var(--sprout)}
+.tl li span{display:block;font-size:12.5px;color:var(--ink-soft)}
+.bub{background:var(--card);border:1px solid var(--line);border-radius:16px 16px 16px 6px;padding:12px 14px;
+  margin-bottom:10px;font-size:15px}
+.bub.me{background:var(--paper);border-radius:16px 16px 6px 16px;margin-left:36px}
+.step{border:1px dashed var(--line);border-radius:12px;padding:12px;margin-top:10px;background:var(--paper)}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--paper);border-top:1px solid var(--line);
+  border-radius:22px 22px 0 0;box-shadow:0 -10px 30px rgba(44,38,32,.14);padding:18px 16px 22px;
+  max-height:78%;overflow:auto;transform:translateY(100%);transition:transform 240ms ease-out;z-index:20}
+.sheet.open{transform:translateY(0)}
+.scrim{position:absolute;inset:0;background:rgba(44,38,32,.28);opacity:0;pointer-events:none;
+  transition:opacity 240ms ease-out;z-index:10}
+.scrim.open{opacity:1;pointer-events:auto}
+.opt{width:100%;text-align:left;background:var(--paper);border:1px solid var(--line);border-radius:12px;
+  padding:13px 14px;margin-bottom:10px;font:400 15px/1.5 var(--f-b);color:var(--ink);cursor:pointer;
+  min-height:44px;transition:border-color .18s ease-out}
+.opt:hover{border-color:var(--clay)}
+.opt.on{border-color:var(--clay);background:var(--card)}
+.opt small{display:block;color:var(--ink-soft);font-size:12.5px}
+.danger{color:#7C360C}
+.tabbar{border-top:1px solid var(--line);display:grid;grid-template-columns:1fr auto 1fr;
+  align-items:center;padding:8px 12px 14px}
+.tabbar span{font-size:13px;color:var(--ink-soft);text-align:center;min-height:44px;display:grid;
+  place-items:center;cursor:pointer}
+.tabbar span.on{color:var(--clay)}
+.seed-fab{width:56px;height:56px;border-radius:50%;background:var(--clay);color:#fff;border:none;
+  font:500 14px/1 var(--f-b);cursor:pointer;box-shadow:var(--sh-card)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+<div class="doc">
+  <div class="doc-head">
+    <h1>原型 · 未发生之地</h1>
+    <p>场景 S03（为愿望约定时机）、S04（风来了，开始第一小步）、S05.1（浏览）、S05.2（重新整理）。
+      可交互：花园／河流视图切换、状态筛选、进入详情、时机半屏、完成第一小步、整理半屏与彻底删除确认。</p>
+  </div>
+
+  <div class="tabs" role="tablist" aria-label="屏幕切换">
+    <button class="tab" role="tab" aria-selected="true" data-go="garden">P2 未发生之地</button>
+    <button class="tab" role="tab" aria-selected="false" data-go="empty">P2 · 某状态为空</button>
+    <button class="tab" role="tab" aria-selected="false" data-go="detail">P3 愿望详情（S03/S04）</button>
+  </div>
+
+  <div class="stage">
+    <figure class="frame">
+      <figcaption id="cap">P2 未发生之地 — 花园视图，「全部」筛选</figcaption>
+      <div class="screen">
+        <div class="sbar"><span>21:04</span><span id="url">/garden</span></div>
+
+        <!-- P2 花园 -->
+        <div class="body scr" id="garden">
+          <div class="topline">
+            <h2 class="title-h">未发生之地</h2>
+            <div class="views">
+              <button class="on" id="vGarden">花园</button>
+              <button id="vRiver">河流</button>
+            </div>
+          </div>
+          <div class="chips" role="tablist" aria-label="按状态筛选">
+            <button class="chip on" data-state="全部">全部</button>
+            <button class="chip" data-state="刚种下">刚种下</button>
+            <button class="chip" data-state="正在酝酿">正在酝酿</button>
+            <button class="chip" data-state="风来了">风来了</button>
+            <button class="chip" data-state="正在发生">正在发生</button>
+            <button class="chip" data-state="安静放下">安静放下</button>
+          </div>
+          <div id="cards" class="grid"></div>
+          <p class="note">此屏不存在：完成率、进度条、逾期标记、连续天数、数字角标、任何红色。</p>
+        </div>
+
+        <!-- P2 某状态为空 -->
+        <div class="body scr hide" id="empty">
+          <div class="topline"><h2 class="title-h">未发生之地</h2></div>
+          <div class="chips">
+            <button class="chip" data-go="garden">全部</button>
+            <button class="chip on">正在发生</button>
+          </div>
+          <div style="text-align:center;padding:60px 10px">
+            <svg viewBox="0 0 24 24" style="width:46px;height:46px;stroke:var(--mist);fill:none;
+              stroke-width:1.3;margin-bottom:14px" role="img" aria-label="一株还没长出的芽">
+              <path d="M12 21V11"/><path d="M12 11c0-3 2.6-5 5-5 0 3-2.2 5-5 5z"/>
+              <path d="M12 13C9.2 13 7 11 7 8c2.4 0 5 2 5 5z"/></svg>
+            <h3 style="font-size:20px">还没有什么正在发生。</h3>
+            <p class="meta" style="margin-top:6px">不着急。</p>
+          </div>
+          <p class="note">筛选保持激活，不自动跳回「全部」；空文案不含催促。</p>
+        </div>
+        <!-- P3 详情 -->
+        <div class="body scr hide" id="detail">
+          <button class="btn-text" data-go="garden">← 回到未发生之地</button>
+          <h2 class="title-h" style="font-size:24px;margin-top:8px">去海边待两天</h2>
+          <p class="meta" style="margin-top:6px">种下于 2026 年 9 月</p>
+          <p style="margin-top:10px"><span class="badge s-brew" id="dBadge">
+            <i class="dot"></i>正在等待合适的风：一个空闲的周末</span></p>
+
+          <div class="sec">
+            <h4>你当时说的是</h4>
+            <p class="quote">「等压力没这么大的时候，想去海边待两天。」</p>
+            <button class="btn-ghost btn" style="min-height:40px;font-size:14px">▷ 听一听原声（0:18）</button>
+          </div>
+
+          <div class="sec">
+            <h4>什么时候再提起它</h4>
+            <p class="meta" id="timingNow">一个空闲的周末</p>
+            <button class="btn-text" id="openTiming">改一改</button>
+          </div>
+
+          <div class="sec">
+            <h4>我读到的</h4>
+            <p class="meta">想要的是：喘口气　·　条件：压力较小时、两天、海边</p>
+          </div>
+
+          <div class="sec" id="prepSec">
+            <h4>准备过程</h4>
+            <ul class="tl" id="prepList">
+              <li>收藏了一张想看的海的照片<span>2026 年 9 月 12 日 22:40</span></li>
+            </ul>
+          </div>
+
+          <div class="sec">
+            <h4>和它的对话</h4>
+            <div class="bub">你在九月说过想去海边待两天。最近你的周末比之前松了一些。</div>
+            <div class="bub" id="stepBub">
+              不用现在决定去哪里。
+              <div class="step">
+                <p style="margin:0 0 10px" id="stepText">今晚花两分钟，收藏一张你想看的海的照片。</p>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <button class="btn btn-primary" id="doneStep" style="min-height:40px;font-size:14px">做完了</button>
+                  <button class="btn btn-ghost" id="smallerStep" style="min-height:40px;font-size:14px">还是太难了，换一个更小的</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;margin-top:20px">
+            <button class="btn btn-primary" id="ready">我好像准备好了</button>
+            <button class="btn btn-ghost" id="openTidy">整理一下</button>
+          </div>
+          <p class="note">此屏不存在：截止日期、计划清单、剩余步骤数、完成百分比、停滞天数。</p>
+        </div>
+
+        <!-- 半屏：时机 -->
+        <div class="scrim" id="scrim"></div>
+        <div class="sheet" id="sheetTiming" role="dialog" aria-label="什么时候再提起它" aria-modal="true">
+          <h3 style="font-size:20px;margin-bottom:4px">什么时候再提起它</h3>
+          <p class="meta" style="margin-bottom:14px">你来定。到了那时候，我再轻轻说一声。</p>
+          <button class="opt" data-t="入冬">某个季节到来<small>春 / 夏 / 秋 / 冬</small></button>
+          <button class="opt" data-t="明年 3 月">某个月份或纪念日<small>选一个月份或一个日子</small></button>
+          <button class="opt" data-t="三个月后">多久之后再想想<small>1 / 3 / 6 / 12 个月</small></button>
+          <button class="opt on" data-t="一个空闲的周末">当我有一个空闲周末时</button>
+          <button class="opt" data-t="你说累的时候">当我主动提到很累时</button>
+          <button class="opt" data-t="__none__">不必提醒，我自己会想起</button>
+          <div style="display:flex;gap:10px;margin-top:6px">
+            <button class="btn btn-primary" id="saveTiming">就这样</button>
+            <button class="btn btn-ghost" data-close>先不改</button>
+          </div>
+        </div>
+        <!-- 半屏：整理 -->
+        <div class="sheet" id="sheetTidy" role="dialog" aria-label="整理一下" aria-modal="true">
+          <h3 style="font-size:20px;margin-bottom:14px">整理一下</h3>
+          <button class="opt">改一改它<small>它现在更像什么？</small></button>
+          <button class="opt">暂时不提醒<small>先安静一段时间</small></button>
+          <button class="opt" id="backToBrew">先放回酝酿<small>已记录的准备过程会留着</small></button>
+          <button class="opt" id="letGo">安静放下<small>它曾被认真保存过，随时可以再回来</small></button>
+          <button class="opt danger" id="askDelete">彻底删除<small>不可恢复</small></button>
+          <div style="margin-top:6px"><button class="btn btn-ghost" data-close>先不整理</button></div>
+        </div>
+
+        <!-- 半屏：删除二次确认 -->
+        <div class="sheet" id="sheetDelete" role="dialog" aria-label="彻底删除确认" aria-modal="true">
+          <h3 style="font-size:20px;margin-bottom:10px">要彻底删除它吗？</h3>
+          <p style="font-size:15px;margin:0 0 6px"><strong>安静放下</strong>：它会留在「安静放下」里，随时可以再回来。</p>
+          <p style="font-size:15px;margin:0 0 16px"><strong>彻底删除</strong>：连同这段语音、照片和你们的对话一起清除，
+            <span class="danger">不可恢复，也没有撤销</span>。</p>
+          <div style="display:flex;gap:10px">
+            <button class="btn btn-primary" id="cancelDelete" autofocus>取消</button>
+            <button class="btn btn-ghost danger" id="confirmDelete">仍然彻底删除</button>
+          </div>
+          <p class="note">默认焦点在「取消」。确认后返回花园并提示「已经彻底删除了」。</p>
+        </div>
+
+        <div class="tabbar">
+          <span class="on" data-go="garden">未发生之地</span>
+          <button class="seed-fab" aria-label="种下一个愿望">种下</button>
+          <span>已发生之书</span>
+        </div>
+      </div>
+    </figure>
+
+    <div style="flex:1 1 320px;min-width:280px">
+      <h2 style="font-size:18px;margin-bottom:10px">这些屏在验收什么</h2>
+      <ul style="font-size:14px;color:var(--ink-soft);line-height:1.85;padding-left:18px;margin:0">
+        <li><strong>S05.1</strong>：筛选与视图切换同步到 URL（顶栏显示当前地址）；卡片状态用「圆点 + 文字 + 形状」三重表达。</li>
+        <li><strong>S05.1</strong>：被周预算顺延的卡片显示「本周先不打扰你」柔光标记，而不是未读角标。</li>
+        <li><strong>S03</strong>：时机为 6 个自主选项，无输入表单；选「不必提醒」后状态回到「刚种下」并显示「你说你会自己想起它」。</li>
+        <li><strong>S03</strong>：点「我好像准备好了」→ 状态「风来了」，圆点带 2.4s 呼吸光晕（reduced-motion 下静态）。</li>
+        <li><strong>S04</strong>：一次只给 1 个下一步；「做完了」写入时间线并转「正在发生」；「换一个更小的」在同轮替换且不重复被拒步骤。</li>
+        <li><strong>S05.2</strong>：整理半屏按侵入性递增排列；「安静放下」无劝阻、文案不含失败／放弃；「彻底删除」才二次确认且默认焦点在取消。</li>
+        <li>装饰色（雾蓝 #8FA5B0 / 灯光 #E8B96B / 芽绿 #6B7B3C）实测对比度 2.48 / 1.75 / 4.49，仅用于圆点与光晕；
+          文本使用 #4A6572（5.98）、#92400E（6.86）、#4F5C2C（7.01）。</li>
+      </ul>
+      <p class="note">对应验收条件见 <code>../1-feature-specs/core-02-unhappened-place-design.md</code>。</p>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var DATA = [
+    { t: '去海边待两天', m: '2026 年 9 月', q: '等压力没这么大的时候……', s: '正在酝酿',
+      lab: '正在等待合适的风：一个空闲的周末', cls: 's-brew', soft: false, near: 2 },
+    { t: '学会滑雪', m: '2026 年 9 月', q: '想在冬天学会滑雪。', s: '正在酝酿',
+      lab: '正在等待合适的风：入冬', cls: 's-brew', soft: true, near: 3 },
+    { t: '重新开始画画', m: '2026 年 4 月', q: '想找回手上有颜色的感觉。', s: '风来了',
+      lab: '风来了', cls: 's-wind', soft: false, near: 1 },
+    { t: '给未来的自己写一封信', m: '2026 年 3 月', q: '等我想清楚一些事再写。', s: '刚种下',
+      lab: '刚种下', cls: 's-seed', soft: false, near: 5 },
+    { t: '带父母去一次南方', m: '2025 年 12 月', q: '趁他们还走得动。', s: '正在发生',
+      lab: '正在发生', cls: 's-going', soft: false, near: 0 },
+    { t: '一个人去看一次日落', m: '2025 年 8 月', q: '那年夏天没去成。', s: '安静放下',
+      lab: '安静放下', cls: 's-let', soft: false, near: 9 }
+  ];
+  var state = '全部', view = 'garden';
+  var box = document.getElementById('cards'), url = document.getElementById('url');
+  function render() {
+    var list = DATA.filter(function (d) { return state === '全部' || d.s === state; });
+    if (view === 'river') list = list.slice().sort(function (a, b) { return a.near - b.near; });
+    box.className = view === 'garden' ? 'grid' : 'river';
+    box.innerHTML = list.map(function (d) {
+      return '<article class="wish" tabindex="0"><h3>' + d.t + '</h3>' +
+        '<p class="meta" style="margin:5px 0 0">种下于 ' + d.m + '</p>' +
+        '<p class="q1">「' + d.q + '」</p>' +
+        '<span class="badge ' + d.cls + '"><i class="dot"></i>' + d.lab + '</span>' +
+        (d.soft ? '<span class="softmark">本周先不打扰你</span>' : '') + '</article>';
+    }).join('');
+    box.querySelectorAll('.wish').forEach(function (el) {
+      el.addEventListener('click', function () { go('detail'); });
+    });
+    url.textContent = '/garden' + (state === '全部' ? '' : '?state=' + state) +
+      (view === 'river' ? (state === '全部' ? '?view=river' : '&view=river') : '');
+  }
+  var caps = {
+    garden: 'P2 未发生之地 — 花园视图，「全部」筛选',
+    empty: 'P2 · 「正在发生」为空 — 筛选保持激活',
+    detail: 'P3 愿望详情 — S03 时机 / S04 第一小步 / S05.2 整理'
+  };
+  function go(id) {
+    document.querySelectorAll('.scr').forEach(function (s) { s.classList.toggle('hide', s.id !== id); });
+    document.querySelectorAll('.tab').forEach(function (t) {
+      t.setAttribute('aria-selected', String(t.dataset.go === id));
+    });
+    document.getElementById('cap').textContent = caps[id];
+    url.textContent = id === 'detail' ? '/wish/w-101' : (id === 'empty' ? '/garden?state=正在发生' : '/garden');
+    if (id === 'garden') render();
+    closeSheets();
+  }
+  document.querySelectorAll('[data-go]').forEach(function (el) {
+    el.addEventListener('click', function () { go(el.dataset.go); });
+  });
+  document.querySelectorAll('.chips .chip[data-state]').forEach(function (c) {
+    c.addEventListener('click', function () {
+      document.querySelectorAll('.chip[data-state]').forEach(function (x) { x.classList.remove('on'); });
+      c.classList.add('on'); state = c.dataset.state; render();
+    });
+  });
+  document.getElementById('vGarden').addEventListener('click', function () {
+    view = 'garden'; this.classList.add('on'); document.getElementById('vRiver').classList.remove('on'); render();
+  });
+  document.getElementById('vRiver').addEventListener('click', function () {
+    view = 'river'; this.classList.add('on'); document.getElementById('vGarden').classList.remove('on'); render();
+  });
+  // ---- 半屏 ----
+  var scrim = document.getElementById('scrim');
+  var sheets = { timing: document.getElementById('sheetTiming'), tidy: document.getElementById('sheetTidy'),
+    del: document.getElementById('sheetDelete') };
+  function closeSheets() {
+    Object.keys(sheets).forEach(function (k) { sheets[k].classList.remove('open'); });
+    scrim.classList.remove('open');
+  }
+  function openSheet(k) { closeSheets(); sheets[k].classList.add('open'); scrim.classList.add('open'); }
+  scrim.addEventListener('click', closeSheets);
+  document.querySelectorAll('[data-close]').forEach(function (b) { b.addEventListener('click', closeSheets); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSheets(); });
+
+  document.getElementById('openTiming').addEventListener('click', function () { openSheet('timing'); });
+  document.getElementById('openTidy').addEventListener('click', function () { openSheet('tidy'); });
+  document.getElementById('askDelete').addEventListener('click', function () { openSheet('del'); });
+  document.getElementById('cancelDelete').addEventListener('click', function () { openSheet('tidy'); });
+  document.getElementById('confirmDelete').addEventListener('click', function () {
+    closeSheets(); go('garden'); alert('已经彻底删除了');
+  });
+
+  // ---- S03 时机 ----
+  var picked = '一个空闲的周末';
+  document.querySelectorAll('#sheetTiming .opt').forEach(function (o) {
+    o.addEventListener('click', function () {
+      document.querySelectorAll('#sheetTiming .opt').forEach(function (x) { x.classList.remove('on'); });
+      o.classList.add('on'); picked = o.dataset.t;
+    });
+  });
+  var badge = document.getElementById('dBadge'), timingNow = document.getElementById('timingNow');
+  function setBadge(cls, text) { badge.className = 'badge ' + cls; badge.innerHTML = '<i class="dot"></i>' + text; }
+  document.getElementById('saveTiming').addEventListener('click', function () {
+    if (picked === '__none__') {
+      timingNow.textContent = '你说你会自己想起它';
+      setBadge('s-seed', '刚种下 · 你说你会自己想起它');
+    } else {
+      timingNow.textContent = picked;
+      setBadge('s-brew', '正在等待合适的风：' + picked);
+    }
+    closeSheets();
+  });
+
+  // ---- S04 第一小步 ----
+  var steps = [
+    '今晚花两分钟，收藏一张你想看的海的照片。',
+    '在地图上收藏一个你想去的海就好，不用决定哪天。',
+    '只是想一想：你更想听海的声音，还是想看日出？'
+  ];
+  var si = 0;
+  document.getElementById('ready').addEventListener('click', function () {
+    setBadge('s-wind', '风来了');
+    document.getElementById('stepBub').scrollIntoView({ block: 'center' });
+  });
+  document.getElementById('smallerStep').addEventListener('click', function () {
+    si = Math.min(si + 1, steps.length - 1);
+    document.getElementById('stepText').textContent = steps[si];
+  });
+  document.getElementById('doneStep').addEventListener('click', function () {
+    var li = document.createElement('li');
+    li.innerHTML = document.getElementById('stepText').textContent.replace(/。$/, '') +
+      '<span>刚刚</span>';
+    document.getElementById('prepList').appendChild(li);
+    setBadge('s-going', '正在发生');
+    si = Math.min(si + 1, steps.length - 1);
+    document.getElementById('stepText').textContent = steps[si];
+  });
+  document.getElementById('letGo').addEventListener('click', function () {
+    setBadge('s-let', '安静放下'); closeSheets();
+    alert('它曾被认真保存过，随时可以再回来');
+  });
+  document.getElementById('backToBrew').addEventListener('click', function () {
+    setBadge('s-brew', '正在等待合适的风：' + picked); closeSheets();
+  });
+
+  render(); go('garden');
+})();
+</script>
+
+
+
+
+</body>
+</html>

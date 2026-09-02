@@ -1,0 +1,53 @@
+# Caddy：TLS 终止 + 反向代理（部署方案 §2 拓扑）。
+#
+# SITE_ADDRESS 决定证书来源：
+#   * `unhappened.example.com`  → Let's Encrypt 自动签发（production / staging 真实域名）
+#   * `localhost`               → Caddy 本地 CA 签发内部证书（本机演练用）
+# PWA 的 Service Worker 与 Web Push 强制 HTTPS，所以证书是功能依赖而不是可选加固。
+
+{
+	email {$ACME_EMAIL:ops@unhappened.local}
+	# 本机演练时把这行的注释去掉可跳过 ACME：
+	# local_certs
+}
+
+{$SITE_ADDRESS:localhost} {
+	encode zstd gzip
+
+	# 对象存储走反代而不是直连：预签名 URL 需要与站点同源，
+	# 经这里暴露给浏览器就不必再要一个域名和一张证书，MinIO 也不必对公网开放。
+	#
+	# 两条约束合起来决定了这条路由的形状（部署方案 §2 取舍 1）：
+	#   1. SigV4 把 **Host 与整条路径**都签进了签名里，所以反代既不能改 Host
+	#      （`header_up Host {host}`），也不能改路径（用 `handle` 而不是
+	#      `handle_path`——后者会剥掉前缀，MinIO 重算签名时路径就对不上了）。
+	#   2. 路径不能改，那对外前缀就只能等于 bucket 名：MinIO 收到
+	#      `/<bucket>/<key>` 才认得出这是哪个桶。
+	# 因此 S3_PUBLIC_BASE 是站点根（不带后缀），预签名自然长成 `/<bucket>/<key>`。
+	handle /{$S3_BUCKET:unhappened-media}/* {
+		reverse_proxy minio:9000 {
+			header_up Host {host}
+		}
+	}
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:80
+	}
+
+	header {
+		# PWA 与隐私相关的三条。Service Worker 需要同源，因此不放宽 frame-ancestors。
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
