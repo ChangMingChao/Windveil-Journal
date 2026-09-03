@@ -4,7 +4,10 @@
   "name": "为一个愿望约定属于它的时机",
   "source": {
     "sequence": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S03-set-timing.md",
-    "api": ["logos/resources/api/wishes.yaml", "logos/resources/api/system.yaml"],
+    "api": [
+      "logos/resources/api/wishes.yaml",
+      "logos/resources/api/system.yaml"
+    ],
     "test_cases": "logos/resources/test/core-S03-test-cases.md"
   },
   "external_dependencies": [
@@ -45,7 +48,9 @@
       },
       "method": "POST",
       "url": "{{base_url}}/api/test/clock",
-      "body": { "now": "2026-09-01T12:00:00+08:00" },
+      "body": {
+        "now": "2026-09-01T12:00:00+08:00"
+      },
       "expected_status": 204
     },
     {
@@ -53,9 +58,14 @@
       "description": "建立匿名账号",
       "method": "POST",
       "url": "{{base_url}}/api/v1/auth/anonymous",
-      "body": { "timezone": "Asia/Shanghai" },
+      "body": {
+        "timezone": "Asia/Shanghai"
+      },
       "expected_status": 201,
-      "extract": { "access_token": "body.access_token", "user_id": "body.user.id" }
+      "extract": {
+        "access_token": "body.access_token",
+        "user_id": "body.user.id"
+      }
     }
   ],
   "teardown": [
@@ -64,7 +74,9 @@
       "description": "恢复真实时钟",
       "method": "POST",
       "url": "{{base_url}}/api/test/clock",
-      "body": { "now": null },
+      "body": {
+        "now": null
+      },
       "expected_status": 204
     },
     {
@@ -72,9 +84,14 @@
       "description": "清理全部愿望",
       "method": "DELETE",
       "url": "{{base_url}}/api/v1/wishes/{{item.id}}?confirm=true",
-      "headers": { "Authorization": "Bearer {{access_token}}" },
+      "headers": {
+        "Authorization": "Bearer {{access_token}}"
+      },
       "for_each": "GET {{base_url}}/api/v1/wishes -> body.items",
-      "expected_status": [204, 404]
+      "expected_status": [
+        204,
+        404
+      ]
     }
   ],
   "flows": [
@@ -88,17 +105,29 @@
           "step": "前置：种下一个愿望",
           "method": "POST",
           "url": "{{base_url}}/api/v1/wishes",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "source": "text", "text": "想在冬天学会滑雪" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "source": "text",
+            "text": "想在冬天学会滑雪"
+          },
           "expected_status": 201,
-          "extract": { "wish_id": "body.wish.id" }
+          "extract": {
+            "wish_id": "body.wish.id"
+          }
         },
         {
           "step": "Step 4: 约定季节 → 冬",
           "method": "PUT",
           "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "type": "season", "season": "winter" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "type": "season",
+            "season": "winter"
+          },
           "expected_status": 200,
           "assert": [
             "body.state == 'brewing'",
@@ -109,10 +138,16 @@
         },
         {
           "step": "Step 9: 时钟推进到入冬后再触发一轮调度",
-          "mock": { "dependency": "系统时钟", "strategy": "fixed-value", "config": "POST /api/test/clock" },
+          "mock": {
+            "dependency": "系统时钟",
+            "strategy": "fixed-value",
+            "config": "POST /api/test/clock"
+          },
           "method": "POST",
           "url": "{{base_url}}/api/test/clock",
-          "body": { "now": "2026-12-08T09:00:00+08:00" },
+          "body": {
+            "now": "2026-12-08T09:00:00+08:00"
+          },
           "expected_status": 204
         },
         {
@@ -125,7 +160,11 @@
           "method": "POST",
           "url": "{{base_url}}/api/test/scheduler/tick",
           "expected_status": 200,
-          "assert": ["body.scanned >= 1", "body.enqueued == 1", "body.delivered == 1"]
+          "assert": [
+            "body.scanned >= 1",
+            "body.enqueued == 1",
+            "body.delivered == 1"
+          ]
         },
         {
           "step": "Step 18: 通过后门断言 outbox 内容与周计数",
@@ -151,9 +190,13 @@
           "step": "Step 20: 点「我好像准备好了」",
           "method": "POST",
           "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/ready",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
           "expected_status": 200,
-          "assert": ["body.state == 'wind'"]
+          "assert": [
+            "body.state == 'wind'"
+          ]
         }
       ]
     },
@@ -167,17 +210,29 @@
           "step": "前置：种下愿望",
           "method": "POST",
           "url": "{{base_url}}/api/v1/wishes",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "source": "text", "text": "想重新开始画画" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "source": "text",
+            "text": "想重新开始画画"
+          },
           "expected_status": 201,
-          "extract": { "wish_id": "body.wish.id" }
+          "extract": {
+            "wish_id": "body.wish.id"
+          }
         },
         {
           "step": "Step 4: after_months=3",
           "method": "PUT",
           "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "type": "after_months", "after_months": 3 },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "type": "after_months",
+            "after_months": 3
+          },
           "expected_status": 200,
           "assert": [
             "body.state == 'brewing'",
@@ -189,8 +244,13 @@
           "step": "UT-S03-10: 幂等重复提交同参数",
           "method": "PUT",
           "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "type": "after_months", "after_months": 3 },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "type": "after_months",
+            "after_months": 3
+          },
           "expected_status": 200
         }
       ]
@@ -205,17 +265,28 @@
           "step": "前置：种下愿望",
           "method": "POST",
           "url": "{{base_url}}/api/v1/wishes",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "source": "text", "text": "想一个人去海边待两天" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "source": "text",
+            "text": "想一个人去海边待两天"
+          },
           "expected_status": 201,
-          "extract": { "wish_id": "body.wish.id" }
+          "extract": {
+            "wish_id": "body.wish.id"
+          }
         },
         {
           "step": "Step 4: 约定 when_tired",
           "method": "PUT",
           "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "type": "when_tired" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "type": "when_tired"
+          },
           "expected_status": 200,
           "assert": [
             "body.timing.trigger_kind == 'signal'",
@@ -227,24 +298,39 @@
           "method": "POST",
           "url": "{{base_url}}/api/test/scheduler/tick",
           "expected_status": 200,
-          "assert": ["body.enqueued == 0"]
+          "assert": [
+            "body.enqueued == 0"
+          ]
         },
         {
           "step": "EX-11.1: 对话中说「最近好累」",
-          "mock": { "dependency": "LLM", "strategy": "mock-service", "config": "mode=fatigue" },
+          "mock": {
+            "dependency": "LLM",
+            "strategy": "mock-service",
+            "config": "mode=fatigue"
+          },
           "method": "POST",
           "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/messages",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "text": "最近好累" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "text": "最近好累"
+          },
           "expected_status": 200,
-          "assert": ["body.intent == 'fatigue'", "body.wish.timing.next_trigger_at != null"]
+          "assert": [
+            "body.intent == 'fatigue'",
+            "body.wish.timing.next_trigger_at != null"
+          ]
         },
         {
           "step": "EX-11.1: 再调度一轮即进入 outbox",
           "method": "POST",
           "url": "{{base_url}}/api/test/scheduler/tick",
           "expected_status": 200,
-          "assert": ["body.enqueued == 1"]
+          "assert": [
+            "body.enqueued == 1"
+          ]
         }
       ]
     },
@@ -258,17 +344,28 @@
           "step": "前置：种下愿望",
           "method": "POST",
           "url": "{{base_url}}/api/v1/wishes",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "source": "text", "text": "想给未来的自己写一封信" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "source": "text",
+            "text": "想给未来的自己写一封信"
+          },
           "expected_status": 201,
-          "extract": { "wish_id": "body.wish.id" }
+          "extract": {
+            "wish_id": "body.wish.id"
+          }
         },
         {
           "step": "EX-4.1: type=none",
           "method": "PUT",
           "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "type": "none" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "type": "none"
+          },
           "expected_status": 200,
           "assert": [
             "body.state == 'seeded'",
@@ -281,7 +378,9 @@
           "step": "EX-4.1: 时钟推到一年后，调度仍不命中",
           "method": "POST",
           "url": "{{base_url}}/api/test/clock",
-          "body": { "now": "2027-09-01T12:00:00+08:00" },
+          "body": {
+            "now": "2027-09-01T12:00:00+08:00"
+          },
           "expected_status": 204
         },
         {
@@ -289,13 +388,17 @@
           "method": "POST",
           "url": "{{base_url}}/api/test/scheduler/tick",
           "expected_status": 200,
-          "assert": ["body.enqueued == 0"]
+          "assert": [
+            "body.enqueued == 0"
+          ]
         },
         {
           "step": "复位时钟",
           "method": "POST",
           "url": "{{base_url}}/api/test/clock",
-          "body": { "now": "2026-09-01T12:00:00+08:00" },
+          "body": {
+            "now": "2026-09-01T12:00:00+08:00"
+          },
           "expected_status": 204
         }
       ]
@@ -310,51 +413,85 @@
           "step": "前置：种下并先设一个合法时机",
           "method": "POST",
           "url": "{{base_url}}/api/v1/wishes",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "source": "text", "text": "想去看一次日落" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "source": "text",
+            "text": "想去看一次日落"
+          },
           "expected_status": 201,
-          "extract": { "wish_id": "body.wish.id" }
+          "extract": {
+            "wish_id": "body.wish.id"
+          }
         },
         {
           "step": "设 season=autumn 作为基线",
           "method": "PUT",
           "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "type": "season", "season": "autumn" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "type": "season",
+            "season": "autumn"
+          },
           "expected_status": 200,
-          "extract": { "baseline_trigger": "body.timing.next_trigger_at" }
+          "extract": {
+            "baseline_trigger": "body.timing.next_trigger_at"
+          }
         },
         {
           "step": "EX-4.2: type=season 缺 season",
           "method": "PUT",
           "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "type": "season" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "type": "season"
+          },
           "expected_status": 422,
-          "assert": ["body.code == 'TIMING_INVALID'"]
+          "assert": [
+            "body.code == 'TIMING_INVALID'"
+          ]
         },
         {
           "step": "EX-4.2: 不存在的日期",
           "method": "PUT",
           "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "type": "month_day", "month_day": "2027-02-30" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "type": "month_day",
+            "month_day": "2027-02-30"
+          },
           "expected_status": 422,
-          "assert": ["body.code == 'TIMING_INVALID'"]
+          "assert": [
+            "body.code == 'TIMING_INVALID'"
+          ]
         },
         {
           "step": "EX-4.2: after_months 非枚举",
           "method": "PUT",
           "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "type": "after_months", "after_months": 2 },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "type": "after_months",
+            "after_months": 2
+          },
           "expected_status": 422
         },
         {
           "step": "EX-4.2: 原有时机未被破坏",
           "method": "GET",
           "url": "{{base_url}}/api/v1/wishes/{{wish_id}}",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
           "expected_status": 200,
           "assert": [
             "body.timing.next_trigger_at == '{{baseline_trigger}}'",
@@ -374,34 +511,55 @@
           "repeat": 5,
           "method": "POST",
           "url": "{{base_url}}/api/v1/wishes",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "source": "text", "text": "预算测试愿望 {{index}}" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "source": "text",
+            "text": "预算测试愿望 {{index}}"
+          },
           "expected_status": 201,
-          "collect": { "wish_ids": "body.wish.id" }
+          "collect": {
+            "wish_ids": "body.wish.id"
+          }
         },
         {
           "step": "为 5 张卡依次设时机",
           "for_each": "{{wish_ids}}",
           "method": "PUT",
           "url": "{{base_url}}/api/v1/wishes/{{item}}/timing",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
-          "body": { "type": "after_months", "after_months": 1 },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "type": "after_months",
+            "after_months": 1
+          },
           "expected_status": 200
         },
         {
           "step": "时钟推进到 1 个月后",
           "method": "POST",
           "url": "{{base_url}}/api/test/clock",
-          "body": { "now": "2026-10-02T09:00:00+08:00" },
+          "body": {
+            "now": "2026-10-02T09:00:00+08:00"
+          },
           "expected_status": 204
         },
         {
           "step": "EX-14.1: 触发一轮调度",
-          "mock": { "dependency": "Web Push", "strategy": "env-disable", "config": "仅写 outbox 并记账" },
+          "mock": {
+            "dependency": "Web Push",
+            "strategy": "env-disable",
+            "config": "仅写 outbox 并记账"
+          },
           "method": "POST",
           "url": "{{base_url}}/api/test/scheduler/tick",
           "expected_status": 200,
-          "assert": ["body.delivered == 3", "body.deferred == 2"]
+          "assert": [
+            "body.delivered == 3",
+            "body.deferred == 2"
+          ]
         },
         {
           "step": "EX-14.1: 周计数上限为 3，且无合并式通知",
@@ -420,9 +578,13 @@
           "step": "EX-14.1: 被顺延的卡在列表中带 soft_deferred",
           "method": "GET",
           "url": "{{base_url}}/api/v1/wishes",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
           "expected_status": 200,
-          "assert": ["count(body.items, 'soft_deferred', true) == 2"]
+          "assert": [
+            "count(body.items, 'soft_deferred', true) == 2"
+          ]
         }
       ]
     },
@@ -437,7 +599,10 @@
           "method": "POST",
           "url": "{{base_url}}/api/test/scheduler/tick",
           "expected_status": 200,
-          "assert": ["body.enqueued == 0", "body.delivered == 0"]
+          "assert": [
+            "body.enqueued == 0",
+            "body.delivered == 0"
+          ]
         },
         {
           "step": "EX-14.2: outbox 与周计数均未变化",
@@ -461,7 +626,9 @@
           "step": "EX-20.1: 对已投递的卡执行 defer",
           "method": "POST",
           "url": "{{base_url}}/api/v1/wishes/{{wish_ids[0]}}/defer",
-          "headers": { "Authorization": "Bearer {{access_token}}" },
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
           "body": {},
           "expected_status": 200,
           "assert": [
@@ -495,14 +662,19 @@
           "method": "POST",
           "url": "{{base_url}}/api/test/scheduler/tick",
           "expected_status": 200,
-          "assert": ["body.delivered == 1", "body.deferred == 2"]
+          "assert": [
+            "body.delivered == 1",
+            "body.deferred == 2"
+          ]
         },
         {
           "step": "断言投递的是最早设定的卡",
           "method": "GET",
           "url": "{{base_url}}/api/test/outbox?user_id={{user_id_c}}",
           "expected_status": 200,
-          "assert": ["body.items[0].wish_id == '{{oldest_wish_id}}'"]
+          "assert": [
+            "body.items[0].wish_id == '{{oldest_wish_id}}'"
+          ]
         }
       ]
     },
@@ -517,38 +689,60 @@
           "method": "POST",
           "url": "{{base_url}}/api/v1/auth/anonymous",
           "expected_status": 201,
-          "extract": { "token_m": "body.access_token", "user_id_m": "body.user.id" }
+          "extract": {
+            "token_m": "body.access_token",
+            "user_id_m": "body.user.id"
+          }
         },
         {
           "step": "绑定邮箱",
           "method": "POST",
           "url": "{{base_url}}/api/v1/auth/link-email",
-          "headers": { "Authorization": "Bearer {{token_m}}" },
-          "body": { "email": "orchestration+mail@example.test", "password": "Passw0rd!" },
+          "headers": {
+            "Authorization": "Bearer {{token_m}}"
+          },
+          "body": {
+            "email": "orchestration+mail@example.test",
+            "password": "Passw0rd!"
+          },
           "expected_status": 200
         },
         {
           "step": "种下并设 after_months=1（该账号从未注册 push 订阅）",
           "method": "POST",
           "url": "{{base_url}}/api/v1/wishes",
-          "headers": { "Authorization": "Bearer {{token_m}}" },
-          "body": { "source": "text", "text": "想去一次长途徒步" },
+          "headers": {
+            "Authorization": "Bearer {{token_m}}"
+          },
+          "body": {
+            "source": "text",
+            "text": "想去一次长途徒步"
+          },
           "expected_status": 201,
-          "extract": { "wish_m": "body.wish.id" }
+          "extract": {
+            "wish_m": "body.wish.id"
+          }
         },
         {
           "step": "设时机",
           "method": "PUT",
           "url": "{{base_url}}/api/v1/wishes/{{wish_m}}/timing",
-          "headers": { "Authorization": "Bearer {{token_m}}" },
-          "body": { "type": "after_months", "after_months": 1 },
+          "headers": {
+            "Authorization": "Bearer {{token_m}}"
+          },
+          "body": {
+            "type": "after_months",
+            "after_months": 1
+          },
           "expected_status": 200
         },
         {
           "step": "推进时钟并触发调度",
           "method": "POST",
           "url": "{{base_url}}/api/test/clock",
-          "body": { "now": "2026-10-02T09:00:00+08:00" },
+          "body": {
+            "now": "2026-10-02T09:00:00+08:00"
+          },
           "expected_status": 204
         },
         {
@@ -556,14 +750,18 @@
           "method": "POST",
           "url": "{{base_url}}/api/test/scheduler/tick",
           "expected_status": 200,
-          "assert": ["body.delivered >= 1"]
+          "assert": [
+            "body.delivered >= 1"
+          ]
         },
         {
           "step": "断言 channel 为 email",
           "method": "GET",
           "url": "{{base_url}}/api/test/outbox?user_id={{user_id_m}}",
           "expected_status": 200,
-          "assert": ["body.items[0].channel == 'email'"]
+          "assert": [
+            "body.items[0].channel == 'email'"
+          ]
         },
         {
           "step": "用邮件后门断言文案引用用户原话",
@@ -582,6 +780,536 @@
           ]
         }
       ]
+    },
+    {
+      "case_id": "ST-S03-16",
+      "type": "normal",
+      "description": "生成时机建议→确认→衔接既有提醒链路（四层边界全链路）",
+      "covers_steps": "S03 分支 P1→P15 + 主图 Step 9→18",
+      "steps": [
+        {
+          "step": "前置：种下一个愿望",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "source": "text",
+            "text": "想在冬天学会滑雪"
+          },
+          "expected_status": 201,
+          "extract": {
+            "wish_id": "body.wish.id"
+          }
+        },
+        {
+          "step": "前置：声明一条可用时段（作为建议依据）",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/me/availability",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "weekday": 5,
+            "start_minute": 540,
+            "end_minute": 720
+          },
+          "expected_status": 201
+        },
+        {
+          "step": "前置：LLM mock 置为 propose_timing 模式",
+          "mock": {
+            "dependency": "LLM",
+            "strategy": "mock-service",
+            "config": "PUT {{mock_base}}/_control {mode:propose_timing}"
+          },
+          "method": "PUT",
+          "url": "{{mock_base}}/_control",
+          "body": {
+            "mode": "propose_timing"
+          },
+          "expected_status": 204
+        },
+        {
+          "step": "P2→P10: 生成时机建议",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 200,
+          "extract": {
+            "proposal_id": "body.proposal.id"
+          },
+          "assert": [
+            "body.degraded == false",
+            "body.proposal.status == 'pending'",
+            "body.proposal.validation.valid == true",
+            "body.proposal.confidence >= 0 && body.proposal.confidence <= 100",
+            "body.proposal.timing_type == 'after_months'",
+            "body.proposal.evidence.length >= 1"
+          ]
+        },
+        {
+          "step": "P11: 建议不产生任何副作用",
+          "method": "GET",
+          "url": "{{base_url}}/api/test/outbox?user_id={{user_id}}",
+          "expected_status": 200,
+          "assert": [
+            "body.items.length == 0"
+          ]
+        },
+        {
+          "step": "P12→P15: 确认建议（空 body）",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals/{{proposal_id}}/confirm",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {},
+          "expected_status": 200,
+          "assert": [
+            "body.wish.state == 'brewing'",
+            "body.wish.timing.next_trigger_at != null",
+            "body.proposal.status == 'confirmed'",
+            "body.proposal.decided_at != null"
+          ]
+        },
+        {
+          "step": "时钟推进 1 个月后触发一轮调度",
+          "mock": {
+            "dependency": "系统时钟",
+            "strategy": "fixed-value",
+            "config": "POST /api/test/clock"
+          },
+          "method": "POST",
+          "url": "{{base_url}}/api/test/clock",
+          "body": {
+            "now": "2026-10-06T09:00:00+08:00"
+          },
+          "expected_status": 204
+        },
+        {
+          "step": "主图 Step 9→17: 调度扫描",
+          "method": "POST",
+          "url": "{{base_url}}/api/test/scheduler/tick",
+          "expected_status": 200,
+          "assert": [
+            "body.enqueued >= 1",
+            "body.delivered >= 1"
+          ]
+        },
+        {
+          "step": "Step 18: outbox 恰好 1 条且文案为模板拼接",
+          "method": "GET",
+          "url": "{{base_url}}/api/test/outbox?user_id={{user_id}}",
+          "expected_status": 200,
+          "assert": [
+            "body.items.length == 1",
+            "body.items[0].status == 'delivered'",
+            "contains(body.items[0].body, '滑雪')"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S03-17",
+      "type": "normal",
+      "description": "拒绝建议不产生任何副作用",
+      "covers_steps": "S03 分支 P16 / EX-P.3",
+      "steps": [
+        {
+          "step": "前置：种下愿望并生成建议",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "source": "text",
+            "text": "想重新开始画画"
+          },
+          "expected_status": 201,
+          "extract": {
+            "wish_id": "body.wish.id"
+          }
+        },
+        {
+          "step": "前置：mock 置 propose_timing",
+          "method": "PUT",
+          "url": "{{mock_base}}/_control",
+          "body": {
+            "mode": "propose_timing"
+          },
+          "expected_status": 204
+        },
+        {
+          "step": "生成建议",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 200,
+          "extract": {
+            "proposal_id": "body.proposal.id"
+          }
+        },
+        {
+          "step": "P16: 拒绝",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals/{{proposal_id}}/reject",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 200,
+          "assert": [
+            "body.proposal.status == 'rejected'",
+            "body.proposal.decided_at != null"
+          ]
+        },
+        {
+          "step": "EX-P.3: wishes 无任何变化",
+          "method": "GET",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 200,
+          "assert": [
+            "body.state == 'seeded'",
+            "body.timing.next_trigger_at == null",
+            "body.timing_proposal == null"
+          ]
+        },
+        {
+          "step": "无任何提醒入箱",
+          "method": "GET",
+          "url": "{{base_url}}/api/test/outbox?user_id={{user_id}}",
+          "expected_status": 200,
+          "assert": [
+            "body.items.length == 0"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S03-18",
+      "type": "normal",
+      "description": "依据被删除 → 建议立即失效，确认被拒",
+      "covers_steps": "EX-P.5 + S08 Step 19",
+      "steps": [
+        {
+          "step": "前置：种下愿望",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "source": "text",
+            "text": "想去看海"
+          },
+          "expected_status": 201,
+          "extract": {
+            "wish_id": "body.wish.id"
+          }
+        },
+        {
+          "step": "前置：可用时段作为依据",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/me/availability",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "weekday": 5,
+            "start_minute": 540,
+            "end_minute": 720
+          },
+          "expected_status": 201,
+          "extract": {
+            "window_id": "body.id"
+          }
+        },
+        {
+          "step": "mock 置 propose_timing（free_weekend 依据引用时段）",
+          "method": "PUT",
+          "url": "{{mock_base}}/_control",
+          "body": {
+            "mode": "propose_timing"
+          },
+          "expected_status": 204
+        },
+        {
+          "step": "生成建议",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 200,
+          "extract": {
+            "proposal_id": "body.proposal.id"
+          }
+        },
+        {
+          "step": "S08 Step 18: 删除依据时段",
+          "method": "DELETE",
+          "url": "{{base_url}}/api/v1/me/availability/{{window_id}}",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 204
+        },
+        {
+          "step": "EX-P.5: 确认被拒",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals/{{proposal_id}}/confirm",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {},
+          "expected_status": 409,
+          "assert": [
+            "body.code == 'PROPOSAL_EXPIRED'"
+          ]
+        },
+        {
+          "step": "提议状态已过期",
+          "method": "GET",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 200,
+          "assert": [
+            "body.items[0].status == 'expired'"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S03-19",
+      "type": "abnormal",
+      "description": "LLM 降级：无落库、无错误码、零副作用",
+      "covers_steps": "EX-P.1",
+      "steps": [
+        {
+          "step": "前置：mock 置为不可用",
+          "method": "PUT",
+          "url": "{{mock_base}}/_control",
+          "body": {
+            "mode": "propose_timing_unavailable"
+          },
+          "expected_status": 204
+        },
+        {
+          "step": "前置：种下愿望",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "source": "text",
+            "text": "想在春天整理阳台"
+          },
+          "expected_status": 201,
+          "extract": {
+            "wish_id": "body.wish.id"
+          }
+        },
+        {
+          "step": "P2→P5: 生成请求降级",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 200,
+          "assert": [
+            "body.degraded == true",
+            "body.proposal == null"
+          ]
+        },
+        {
+          "step": "EX-P.1: 无落库、状态不变",
+          "method": "GET",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 200,
+          "assert": [
+            "body.state == 'seeded'",
+            "body.timing_proposal == null"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S03-20",
+      "type": "normal",
+      "description": "新提议替代旧 pending（结构性单 pending）",
+      "covers_steps": "S03 分支 P7 + UT-S03-33",
+      "steps": [
+        {
+          "step": "前置：种下愿望",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "source": "text",
+            "text": "想去学自由泳"
+          },
+          "expected_status": 201,
+          "extract": {
+            "wish_id": "body.wish.id"
+          }
+        },
+        {
+          "step": "mock 置 propose_timing",
+          "method": "PUT",
+          "url": "{{mock_base}}/_control",
+          "body": {
+            "mode": "propose_timing"
+          },
+          "expected_status": 204
+        },
+        {
+          "step": "第一条建议",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 200,
+          "extract": {
+            "p1": "body.proposal.id"
+          }
+        },
+        {
+          "step": "第二条建议替代第一条",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 200,
+          "extract": {
+            "p2": "body.proposal.id"
+          },
+          "assert": [
+            "body.proposal.id != '{{p1}}'",
+            "body.proposal.status == 'pending'"
+          ]
+        },
+        {
+          "step": "历史中旧提议已过期、仅 1 条 pending",
+          "method": "GET",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 200,
+          "assert": [
+            "body.items.length == 2",
+            "count(body.items[?(@.status == 'pending')]) == 1"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S03-21",
+      "type": "normal",
+      "description": "确认与调度全链路不调用 LLM 对话（文案仍为模板拼接）",
+      "covers_steps": "分支 P15 + 主图 Step 15 说明",
+      "steps": [
+        {
+          "step": "前置：复用 ST-S03-16 链路至确认完成",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "source": "text",
+            "text": "想在冬天学会滑雪"
+          },
+          "expected_status": 201,
+          "extract": {
+            "wish_id": "body.wish.id"
+          }
+        },
+        {
+          "step": "mock 置 propose_timing",
+          "method": "PUT",
+          "url": "{{mock_base}}/_control",
+          "body": {
+            "mode": "propose_timing"
+          },
+          "expected_status": 204
+        },
+        {
+          "step": "生成并确认",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 200,
+          "extract": {
+            "proposal_id": "body.proposal.id"
+          }
+        },
+        {
+          "step": "确认",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals/{{proposal_id}}/confirm",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {},
+          "expected_status": 200
+        },
+        {
+          "step": "重置统计后推进时钟并调度",
+          "method": "POST",
+          "url": "{{mock_base}}/_stats/reset",
+          "expected_status": 204
+        },
+        {
+          "step": "时钟推进",
+          "method": "POST",
+          "url": "{{base_url}}/api/test/clock",
+          "body": {
+            "now": "2026-10-06T09:00:00+08:00"
+          },
+          "expected_status": 204
+        },
+        {
+          "step": "触发调度",
+          "method": "POST",
+          "url": "{{base_url}}/api/test/scheduler/tick",
+          "expected_status": 200,
+          "assert": [
+            "body.delivered >= 1"
+          ]
+        },
+        {
+          "step": "调度阶段 LLM 对话调用为 0",
+          "method": "GET",
+          "url": "{{mock_base}}/_stats",
+          "expected_status": 200,
+          "assert": [
+            "body.chat_completions_calls == 0"
+          ]
+        }
+      ]
     }
   ],
   "fragments": {
@@ -591,36 +1319,53 @@
         "method": "POST",
         "url": "{{base_url}}/api/v1/auth/anonymous",
         "expected_status": 201,
-        "extract": { "token_c": "body.access_token", "user_id_c": "body.user.id" }
+        "extract": {
+          "token_c": "body.access_token",
+          "user_id_c": "body.user.id"
+        }
       },
       {
         "step": "时钟回到 6 个月前设定第 1 张（最早）",
         "method": "POST",
         "url": "{{base_url}}/api/test/clock",
-        "body": { "now": "2026-03-01T12:00:00+08:00" },
+        "body": {
+          "now": "2026-03-01T12:00:00+08:00"
+        },
         "expected_status": 204
       },
       {
         "step": "种下并设时机（最早设定）",
         "include": "seed_and_set_timing",
-        "extract": { "oldest_wish_id": "wish_id" }
+        "extract": {
+          "oldest_wish_id": "wish_id"
+        }
       },
       {
         "step": "时钟到 1 个月前设定第 2 张",
         "method": "POST",
         "url": "{{base_url}}/api/test/clock",
-        "body": { "now": "2026-08-01T12:00:00+08:00" },
+        "body": {
+          "now": "2026-08-01T12:00:00+08:00"
+        },
         "expected_status": 204
       },
-      { "step": "种下并设时机", "include": "seed_and_set_timing" },
+      {
+        "step": "种下并设时机",
+        "include": "seed_and_set_timing"
+      },
       {
         "step": "时钟到昨天设定第 3 张",
         "method": "POST",
         "url": "{{base_url}}/api/test/clock",
-        "body": { "now": "2026-08-31T12:00:00+08:00" },
+        "body": {
+          "now": "2026-08-31T12:00:00+08:00"
+        },
         "expected_status": 204
       },
-      { "step": "种下并设时机", "include": "seed_and_set_timing" }
+      {
+        "step": "种下并设时机",
+        "include": "seed_and_set_timing"
+      }
     ],
     "burn_budget_to_one": [
       {
@@ -632,20 +1377,7 @@
       }
     ]
   },
-  "not_orchestrated": [
-    {
-      "case_id": "ST-S03-06",
-      "reason": "调度咨询锁需同时运行两个 scheduler 实例，编排层只有一个 tick 后门；由代码级 ST 覆盖"
-    },
-    {
-      "case_id": "ST-S03-09",
-      "reason": "Push 订阅返回 410 需向真实推送服务注入故障，而架构声明的 test_strategy 为 env-disable（不调用真实服务）。邮件兜底这一同源代码路径已由 ST-S03-15 覆盖；410 后删除订阅行的部分由代码级 ST 覆盖。策略缺口已登记在 core-00-orchestration-index.json"
-    },
-    {
-      "case_id": "ST-S03-10",
-      "reason": "双通道同时失败同样需要故障注入，见上；由代码级 ST 覆盖"
-    },
-    { "case_id": "ST-S03-13", "reason": "[manual] 光晕动效" },
-    { "case_id": "ST-S03-14", "reason": "[manual] 真机 Web Push" }
-  ]
+  "not_orchestrated": {
+    "note": "S03 时机提议分支的 6 个 ST（ST-S03-16~21）全部编排。EX-P.2（规则校验不通过）与 EX-P.4（confirm 携带时间字段）由 UT-S03-37/38/35 在代码级覆盖——LLM mock 无法稳定产生「非法草稿」模式，且 422 断言不依赖跨服务协作。"
+  }
 }

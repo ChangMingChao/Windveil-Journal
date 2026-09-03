@@ -399,6 +399,131 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
 
+  /wishes/{wish_id}/timing-proposals:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+    post:
+      operationId: createTimingProposal
+      tags: [timing]
+      summary: "让 Agent 提个时候"
+      description: "来源：S03 时机提议分支 P1 → P11。LLM 只产出结构化草稿（timing_type 限 4 种时间类）；服务端立即做规则校验并写 validation_result；建议落库为 pending 但不产生任何提醒、不改状态（S08 需求边界）。同一愿望至多 1 条 pending（新提议产生时旧 pending 自动过期）。degraded=true 表示生成失败或校验未通过。"
+      responses:
+        '200':
+          description: "已生成（或降级）。proposal 为 null 且 degraded=true 时前端展示「它暂时没想出来」（S03 EX-P.1）"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [proposal, degraded]
+                properties:
+                  proposal:
+                    oneOf:
+                      - $ref: '#/components/schemas/TimingProposal'
+                      - type: "null"
+                  degraded: { type: boolean }
+        '404':
+          description: "不存在或不属于当前用户（WISH_NOT_FOUND）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '429':
+          description: "生成请求过于频繁（RATE_LIMITED；LLM 接口限流每分钟 10 次同样适用于本端点）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    get:
+      operationId: listTimingProposals
+      tags: [timing]
+      summary: "查看该愿望的时机建议历史"
+      description: "来源：S03 分支 P10 与四层边界第 2 层的审计要求。含已确认、已拒绝、已过期（含规则校验未通过）的记录，按 created_at 倒序。"
+      responses:
+        '200':
+          description: "建议列表"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/TimingProposal' }
+        '404':
+          description: "不存在或不属于当前用户（WISH_NOT_FOUND）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /wishes/{wish_id}/timing-proposals/{proposal_id}/confirm:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+      - name: proposal_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: confirmTimingProposal
+      tags: [timing]
+      summary: "采纳这条建议（就这样定）"
+      description: "来源：S03 分支 P12 → P15。请求体必须为空——确认接口只接受已校验的提议，不接受客户端传入任何触发时间（EX-P.4）。服务端在事务内复用 setWishTiming 的校验与计算写入 wishes（等价于用户手动选择），提议转 confirmed。"
+      responses:
+        '200':
+          description: "已采纳；wish 按建议写入时机并转 brewing（type 为 4 种时间类之一）"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [wish, proposal]
+                properties:
+                  wish: { $ref: '#/components/schemas/WishDetail' }
+                  proposal: { $ref: '#/components/schemas/TimingProposal' }
+        '409':
+          description: "提议不是 pending（已确认/拒绝/过期，PROPOSAL_EXPIRED / PROPOSAL_NOT_CONFIRMABLE，EX-P.3 / EX-P.5）；或规则校验结果 invalid"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          description: "请求体非空（PROPOSAL_CONFIRM_BODY_FORBIDDEN，EX-P.4）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: "愿望或提议不存在或不属于当前用户（WISH_NOT_FOUND）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /wishes/{wish_id}/timing-proposals/{proposal_id}/reject:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+      - name: proposal_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: rejectTimingProposal
+      tags: [timing]
+      summary: "先不定"
+      description: "来源：S03 分支 P16 / EX-P.3。提议转 rejected 并记 decided_at；不写 wishes 任何字段；不自动生成新建议；用户手动选择 6 选项的路径不受影响。"
+      responses:
+        '200':
+          description: "已记下"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [proposal]
+                properties:
+                  proposal: { $ref: '#/components/schemas/TimingProposal' }
+        '409':
+          description: "提议不是 pending（PROPOSAL_EXPIRED）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: "愿望或提议不存在或不属于当前用户（WISH_NOT_FOUND）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
   /wishes/{wish_id}/steps/next:
     parameters:
       - $ref: '#/components/parameters/WishId'
@@ -665,6 +790,64 @@ components:
           enum: [chat, amend, assist, fatigue, null]
         created_at: { type: string, format: date-time }
 
+    TimingProposal:
+      type: object
+      required: [id, wish_id, status, timing_type, validation, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        wish_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [pending, confirmed, rejected, expired]
+          description: "待确认 / 已确认 / 已拒绝 / 已过期（含规则校验未通过与新提议替代）"
+        timing_type:
+          type: string
+          enum: [season, month_day, after_months, free_weekend]
+          description: "仅 4 种时间类——signal（when_tired）与 none 不是可执行时间，不由模型提议"
+        timing_value:
+          type: [string, "null"]
+          description: "参数：winter / 2027-03 或 2027-03-15 / 3 / null（free_weekend）"
+        proposed_trigger_at:
+          type: [string, "null"]
+          format: date-time
+          description: "模型给出的参考展示值，仅供用户预览；永不写入 wishes，next_trigger_at 一律由服务端计算（S03 分支 P13 说明）"
+        reason:
+          type: [string, "null"]
+          description: "一句理由，引用依据条目（如「因为你说过周六上午通常有空」）；服务端解密后的明文"
+        confidence:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 100
+          description: "前端映射为「大概猜的 / 比较确定」，不展示裸数字"
+        evidence:
+          type: array
+          description: "依据条目引用；只存 ID，条目删除后引用自然失效（架构 5.3 增补）"
+          items:
+            type: object
+            required: [kind, id]
+            properties:
+              kind:
+                type: string
+                enum: [preference, availability, timeline]
+              id: { type: string, format: uuid }
+        validation:
+          type: object
+          required: [valid]
+          properties:
+            valid: { type: boolean }
+            reason_code:
+              type: [string, "null"]
+              description: "valid=false 时的原因，如 TIMING_INVALID、PROPOSAL_NO_AVAILABILITY"
+        created_at: { type: string, format: date-time }
+        expires_at:
+          type: string
+          format: date-time
+          description: "默认创建后 7 天，超时由 Scheduler 低频扫描置 expired"
+        decided_at:
+          type: [string, "null"]
+          format: date-time
+          description: "确认或拒绝时间；pending 与 expired 时为 null"
+
     WishDetail:
       allOf:
         - $ref: '#/components/schemas/WishCard'
@@ -684,6 +867,11 @@ components:
             pending_question:
               type: boolean
               description: "true 表示有一句「待未来再问」的追问"
+            timing_proposal:
+              oneOf:
+                - $ref: '#/components/schemas/TimingProposal'
+                - type: "null"
+              description: "当前待确认的时机建议；无 pending 建议时为 null（S03 分支 P11）"
             amended_from:
               type: [string, "null"]
               description: "「最初你说的是……」，来自 amendments 最早的一条快照（S04 EX-23.1）"

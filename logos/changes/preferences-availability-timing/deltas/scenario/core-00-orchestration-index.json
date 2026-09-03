@@ -1,48 +1,18 @@
+## ADDED — S08 API 编排测试总索引（整文件新版本）
+
 {
   "$schema_note": "OpenLogos API 编排测试总索引（Phase 3 Step 4b）。本文件不含可执行 flow，只登记全局约定、覆盖统计与待确认项。",
   "module": "core",
   "generated_at": "2026-09-03",
   "files": [
-    {
-      "scenario": "S01",
-      "path": "logos/resources/scenario/core-S01-onboarding.json",
-      "flows": 7
-    },
-    {
-      "scenario": "S02",
-      "path": "logos/resources/scenario/core-S02-seed-wish.json",
-      "flows": 10
-    },
-    {
-      "scenario": "S03",
-      "path": "logos/resources/scenario/core-S03-timing.json",
-      "flows": 16
-    },
-    {
-      "scenario": "S04",
-      "path": "logos/resources/scenario/core-S04-first-step.json",
-      "flows": 9
-    },
-    {
-      "scenario": "S05",
-      "path": "logos/resources/scenario/core-S05-browse-tidy.json",
-      "flows": 12
-    },
-    {
-      "scenario": "S06",
-      "path": "logos/resources/scenario/core-S06-memory-page.json",
-      "flows": 13
-    },
-    {
-      "scenario": "S07",
-      "path": "logos/resources/scenario/core-S07-recall.json",
-      "flows": 8
-    },
-    {
-      "scenario": "S08",
-      "path": "logos/resources/scenario/core-S08-preferences-availability.json",
-      "flows": 4
-    }
+    { "scenario": "S01", "path": "logos/resources/scenario/core-S01-onboarding.json", "flows": 7 },
+    { "scenario": "S02", "path": "logos/resources/scenario/core-S02-seed-wish.json", "flows": 10 },
+    { "scenario": "S03", "path": "logos/resources/scenario/core-S03-timing.json", "flows": 16 },
+    { "scenario": "S04", "path": "logos/resources/scenario/core-S04-first-step.json", "flows": 9 },
+    { "scenario": "S05", "path": "logos/resources/scenario/core-S05-browse-tidy.json", "flows": 12 },
+    { "scenario": "S06", "path": "logos/resources/scenario/core-S06-memory-page.json", "flows": 13 },
+    { "scenario": "S07", "path": "logos/resources/scenario/core-S07-recall.json", "flows": 7 },
+    { "scenario": "S08", "path": "logos/resources/scenario/core-S08-preferences-availability.json", "flows": 4 }
   ],
   "conventions": {
     "case_id": "flow.case_id 复用 Step 4a 的 ST-* ID，不新建平行 ID 空间。编排新增的边界 flow 已回写到对应 test-cases.md 的「2.3 边界用例」，保证 ID 唯一定义在一处。",
@@ -54,30 +24,10 @@
   "mock_service_contract": {
     "note": "架构声明 LLM 与 ASR 的策略为 mock-service。编排用到以下控制面，属 code 阶段需实现的部分。preferences-availability-timing 提案新增 propose_timing / propose_timing_unavailable / summarize_digest 三类模式：",
     "endpoints": [
-      {
-        "method": "PUT",
-        "path": "/_control",
-        "body": "{mode: ok|timeout|invalid_json|near_term_todo|violating_step|amend|fatigue|propose_timing|propose_timing_unavailable|summarize_digest, delay_ms?}",
-        "used_by": "LLM"
-      },
-      {
-        "method": "PUT",
-        "path": "/_control_asr",
-        "body": "{mode: ok|error_500|empty_text}",
-        "used_by": "ASR"
-      },
-      {
-        "method": "GET",
-        "path": "/_stats",
-        "returns": "{chat_completions_calls, transcriptions_calls}",
-        "used_by": "ST-S04-04 / ST-S04-06 / ST-S03-21 断言调用次数"
-      },
-      {
-        "method": "POST",
-        "path": "/_stats/reset",
-        "returns": "204",
-        "used_by": "同上"
-      }
+      { "method": "PUT", "path": "/_control", "body": "{mode: ok|timeout|invalid_json|near_term_todo|violating_step|amend|fatigue|propose_timing|propose_timing_unavailable|summarize_digest, delay_ms?}", "used_by": "LLM" },
+      { "method": "PUT", "path": "/_control_asr", "body": "{mode: ok|error_500|empty_text}", "used_by": "ASR" },
+      { "method": "GET", "path": "/_stats", "returns": "{chat_completions_calls, transcriptions_calls}", "used_by": "ST-S04-04 / ST-S04-06 / ST-S03-21 断言调用次数" },
+      { "method": "POST", "path": "/_stats/reset", "returns": "204", "used_by": "同上" }
     ],
     "propose_timing_note": "propose_timing 返回固定草稿（after_months=1、confidence=82、reason 引用可用时段、evidence 含最新 availability 条目）；propose_timing_unavailable 使下一次 propose_timing 调用超时，覆盖 S03 EX-P.1；summarize_digest 返回固定摘要文本，覆盖 S08 摘要支线。"
   },

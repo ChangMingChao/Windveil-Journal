@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>原型 · 管理偏好与可用时段（S08）— 未发生事件管理局</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600&family=Raleway:wght@300;400;500;600&display=swap');
+:root{--paper:#FDFBF7;--card:#F5F0E1;--ink:#2C2620;--ink-soft:#5C5347;--clay:#92400E;--mist-deep:#4A6572;--sprout-deep:#4F5C2C;--mist:#8FA5B0;--sprout:#6B7B3C;--lamp:#E8B96B;--line:#E3DCCB;--leaf:#A8A29E;--r-card:18px;--r-input:14px;--sh-card:0 6px 20px rgba(44,38,32,.06);--f-h:'Lora','Noto Serif SC',Georgia,'Songti SC',serif;--f-b:'Raleway','Noto Sans SC','PingFang SC','Microsoft YaHei',system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:#EFE9DC;color:var(--ink);font:400 16px/1.7 var(--f-b);padding:24px 16px 64px}h1,h2,h3{font-family:var(--f-h);font-weight:500;margin:0}.doc{max-width:1420px;margin:0 auto}.doc-head h1{font-size:24px}.doc-head p{color:var(--ink-soft);font-size:14px;margin:6px 0 0;max-width:74ch}.stage{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start;margin-top:22px}.frame{width:375px;flex:0 0 375px;margin:0}.frame figcaption{font-size:13px;color:var(--ink-soft);margin-bottom:8px}.screen{position:relative;height:760px;background:var(--paper);border:1px solid var(--line);border-radius:28px;box-shadow:0 10px 34px rgba(44,38,32,.10);overflow:hidden;display:flex;flex-direction:column}.sbar{padding:14px 16px 0;font-size:12px;color:var(--ink-soft);display:flex;justify-content:space-between}.body{flex:1 1 auto;overflow:auto;padding:16px 16px 92px}.row{display:flex;align-items:center;justify-content:space-between;gap:12px}.title-h{font-family:var(--f-h);font-size:22px;line-height:1.4}.meta{font-size:13px;color:var(--ink-soft)}.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--sh-card);padding:16px;margin:12px 0}.card h3{font-size:17px;line-height:1.35}.quote{font-style:italic;color:var(--ink-soft);font-size:15px;line-height:1.75}.badge{display:inline-flex;align-items:center;gap:7px;color:#6B6257;font-size:13px}.dot{width:9px;height:9px;border-radius:999px;background:var(--leaf)}.dot-declared{background:var(--sprout)}.dot-inferred{background:transparent;border:1.5px solid var(--mist)}.tier{font-size:12px;color:var(--mist-deep);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.btn{font:500 16px/1 var(--f-b);min-height:44px;padding:0 20px;border-radius:999px;border:1px solid transparent;cursor:pointer}.btn-primary{background:var(--clay);color:#fff}.btn-ghost{background:transparent;color:var(--clay);border-color:var(--line)}.btn-text{background:none;border:none;color:var(--clay);font:400 14px/1 var(--f-b);min-height:44px;padding:0 6px;text-decoration:underline;text-underline-offset:3px}.input{width:100%;min-height:48px;border:1px solid var(--line);border-radius:var(--r-input);background:#fff;padding:12px 14px;font:400 15px/1.5 var(--f-b);color:var(--ink)}.input::placeholder{color:var(--leaf)}.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--paper);border-top:1px solid var(--line);border-radius:26px 26px 0 0;box-shadow:0 -12px 30px rgba(44,38,32,.16);padding:18px 18px 24px}.sheet-handle{width:44px;height:4px;border-radius:999px;background:var(--line);margin:0 auto 18px}.week{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin:10px 0}.day{border:1px solid var(--line);border-radius:12px;padding:8px 2px;text-align:center;font-size:12px;color:var(--ink-soft);background:rgba(245,240,225,.5)}.day.free{background:#F3F2E4;border-color:var(--sprout);color:var(--sprout-deep)}.day .bar{height:5px;border-radius:999px;background:var(--sprout);margin-top:6px;opacity:.75}.stepper{display:inline-flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:999px;padding:6px 12px;background:#fff;font-size:14px}.stepper button{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:var(--paper);color:var(--clay);font-size:16px;cursor:pointer}.tip{background:#F3F2E4;border:1px solid #DFDDBE;border-radius:14px;padding:10px 12px;color:var(--sprout-deep);font-size:13px;margin:10px 0}.warn{background:#fff7e8;border:1px solid #EED7AE;border-radius:14px;padding:10px 12px;color:var(--clay);font-size:13px;margin:10px 0}.empty{height:100%;display:grid;place-items:center;text-align:center;padding:36px}.empty .moon{width:86px;height:86px;border-radius:50%;background:linear-gradient(135deg,#FFF7DF,#E8B96B);margin:0 auto 18px;box-shadow:0 10px 24px rgba(232,185,107,.22)}.revoked{color:var(--leaf);font-size:13px}.divider{border:0;border-top:1px dashed var(--line);margin:18px 0}.btn:focus-visible,.input:focus-visible{outline:2px solid var(--clay);outline-offset:2px}@media (prefers-reduced-motion: reduce){*{transition-duration:.01ms!important;animation-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div class="doc">
+  <div class="doc-head">
+    <h1>S08 · 管理偏好与可用时段</h1>
+    <p>五个屏：「它记得我什么」主区（偏好来源徽标 + 可用时段周视图）、撤回痕迹与删除确认、时段新增半屏（结构化选择）、P3 时机建议确认卡、空态。设计令牌沿用既有 <code>design-system.json</code>；不出现条数统计、裸百分比与技术字样。</p>
+  </div>
+  <div class="stage">
+    <figure class="frame">
+      <figcaption>1 / 「它记得我什么」主区：「你说过的」强于「我猜的」，猜测带置信档；声明输入 + 可用时段周视图。</figcaption>
+      <section class="screen" aria-label="它记得我什么主区">
+        <div class="sbar"><span>9:41</span><span>我的</span></div>
+        <div class="body">
+          <button class="btn-text">← 回到我的</button>
+          <h2 class="title-h">它记得我什么</h2>
+          <p class="meta">这里的东西只有你能看到，也随时可以让它忘掉。</p>
+          <article class="card">
+            <div class="row"><span class="badge"><span class="dot dot-declared"></span>你说过的</span><button class="btn-text">删掉</button></div>
+            <h3>更想和朋友一起做这些事</h3>
+            <p class="meta">你说于 9 月 2 日</p>
+          </article>
+          <article class="card">
+            <div class="row"><span class="badge"><span class="dot dot-inferred"></span>我猜的</span><span class="tier">比较确定</span></div>
+            <h3>喜欢在事情开始前先看一眼别人怎么做的</h3>
+            <div class="row" style="margin-top:8px"><span class="meta">因为你收藏步骤前总先看别人的记录</span><button class="btn-text">猜错了</button></div>
+          </article>
+          <article class="card">
+            <div class="row"><span class="badge"><span class="dot dot-inferred"></span>我猜的</span><span class="tier">大概猜的</span></div>
+            <h3>预算上想再稳一点</h3>
+            <div class="row" style="margin-top:8px"><span class="meta">来自你改过一次旅行计划</span><button class="btn-text">猜错了</button></div>
+          </article>
+          <div class="card">
+            <h3>想让它记住什么？</h3>
+            <div class="row" style="gap:8px;margin-top:8px"><span class="pill-alias" style="font-size:13px;color:var(--mist-deep)">主题：同行</span></div>
+            <input class="input" style="margin-top:8px" placeholder="用一句话告诉它，比如「更想和朋友一起」">
+            <div class="row" style="margin-top:10px"><button class="btn btn-primary">记下来</button><span class="meta">不完整也没关系</span></div>
+          </div>
+          <hr class="divider">
+          <div class="row"><h3>什么时候通常有空</h3><button class="btn-text">加一段</button></div>
+          <div class="week" aria-label="可用时段周视图">
+            <div class="day">周一</div><div class="day">周二</div><div class="day">周三</div><div class="day">周四</div>
+            <div class="day free">周五<span class="bar" style="width:70%"></span>9–12</div>
+            <div class="day">周六</div><div class="day">周日</div>
+          </div>
+          <p class="meta">周五上午 · 你说过「孩子出门前都可以」。</p>
+          <div class="tip">有了这段空闲，「空闲周末」类时机和建议都会以此为准，不会再来问你。</div>
+        </div>
+      </section>
+    </figure>
+    <figure class="frame">
+      <figcaption>2 / 已撤回痕迹与删除确认：撤回保留痕迹、删除前一次确认，无计数。</figcaption>
+      <section class="screen" aria-label="撤回痕迹与删除确认">
+        <div class="sbar"><span>9:41</span><span>我的</span></div>
+        <div class="body">
+          <h2 class="title-h">它记得我什么</h2>
+          <div class="card">
+            <div class="row"><span class="badge"><span class="dot dot-inferred"></span>我猜的</span><span class="tier">大概猜的</span></div>
+            <h3>喜欢一个人安静地做事</h3>
+            <div class="row" style="margin-top:8px"><span class="meta">来自你婉拒过一次聚会</span><button class="btn-text">猜错了</button></div>
+          </article>
+          <details>
+            <summary class="meta" style="cursor:pointer;padding:6px 0">你看过的猜测（有些已经撤回）</summary>
+            <div class="card" style="opacity:.72">
+              <span class="revoked">你于 8 月 30 日撤回了它</span>
+              <h3 style="font-size:15px">周末更适合出门</h3>
+            </div>
+          </details>
+          <div class="sheet">
+            <div class="sheet-handle"></div>
+            <h2 class="title-h">删掉这条吗</h2>
+            <p class="meta">删掉后，它就真的不记得这条了——导出的内容里也不会再有。</p>
+            <div class="row" style="margin-top:18px"><button class="btn btn-primary">删掉</button><button class="btn btn-ghost">先留着</button></div>
+          </div>
+        </div>
+      </section>
+    </figure>
+    <figure class="frame">
+      <figcaption>3 / 新增可用时段：周几胶囊 + 分钟步进器，结束早于开始时禁用保存。</figcaption>
+      <section class="screen" aria-label="新增可用时段半屏">
+        <div class="sbar"><span>9:41</span><span>什么时候通常有空</span></div>
+        <div class="body">
+          <h2 class="title-h">挑一段通常有空的时间</h2>
+          <div class="row" style="justify-content:flex-start;gap:8px;margin-top:12px">
+            <span class="pill" style="border:1px solid var(--line);border-radius:999px;padding:7px 12px;font-size:13px">周一</span>
+            <span class="pill" style="border:1px solid var(--line);border-radius:999px;padding:7px 12px;font-size:13px">…</span>
+            <span class="pill" style="border:1px solid var(--clay);border-radius:999px;padding:7px 12px;font-size:13px;color:var(--clay);background:#fff8ef">周六</span>
+            <span class="pill" style="border:1px solid var(--line);border-radius:999px;padding:7px 12px;font-size:13px">周日</span>
+          </div>
+          <div class="card">
+            <div class="row"><span>从</span><span class="stepper"><button aria-label="更早">−</button>9:00<button aria-label="更晚">＋</button></span></div>
+            <div class="row" style="margin-top:10px"><span>到</span><span class="stepper"><button aria-label="更早">−</button>12:00<button aria-label="更晚">＋</button></span></div>
+            <div class="warn">结束要晚于开始</div>
+            <input class="input" style="margin-top:8px" placeholder="想补一句吗？比如「孩子出门前都可以」">
+          </div>
+        </div>
+        <div class="sheet"><div class="sheet-handle"></div><div class="row"><button class="btn btn-ghost">保存</button><button class="btn btn-text">先不加</button></div></div>
+      </section>
+    </figure>
+    <figure class="frame">
+      <figcaption>4 / P3 时机建议确认卡：时机 + 理由（引用依据）+ 置信档，确认前不产生任何提醒。</figcaption>
+      <section class="screen" aria-label="时机建议确认半屏">
+        <div class="sbar"><span>9:41</span><span>愿望详情</span></div>
+        <div class="body">
+          <button class="btn-text">← 学会滑雪</button>
+          <h2 class="title-h">它想了个时候</h2>
+          <p class="meta">先看看它的建议，定不定都由你。</p>
+          <div class="card">
+            <span class="badge"><span class="dot dot-inferred"></span>建议：<strong style="color:var(--mist-deep)">一个空闲的周末</strong></span>
+            <p class="quote" style="margin:8px 0 0">“因为你说过周五上午通常有空，这件事又不需要赶日子。”</p>
+            <div class="row" style="margin-top:10px"><span class="tier">比较确定</span><span class="meta">依据：周五上午通常有空</span></div>
+            <div class="row" style="margin-top:14px"><button class="btn btn-primary">就这样定</button><button class="btn btn-ghost">先不定</button></div>
+          </div>
+          <div class="tip">定下来之前，它不会提醒你、也不会改变这张卡片的状态。</div>
+          <button class="btn-text">还是我自己选一个时候</button>
+        </div>
+      </section>
+    </figure>
+    <figure class="frame">
+      <figcaption>5 / 空态：单一输入入口，无「你还没有」句式、无补齐引导。</figcaption>
+      <section class="screen" aria-label="它记得我什么空态">
+        <div class="sbar"><span>9:41</span><span>我的</span></div>
+        <div class="body"><div class="row"><h2 class="title-h">它记得我什么</h2><button class="btn-text">回到我的</button></div><div class="empty"><div><div class="moon"></div><h2 class="title-h">它还什么都不知道</h2><p class="meta">你想让它记住什么？说一句就行。</p><input class="input" style="margin-top:12px" placeholder="比如「更想和朋友一起」"><div class="row" style="margin-top:10px;justify-content:center"><button class="btn btn-ghost">记下来</button></div></div></div></div>
+      </section>
+    </figure>
+  </div>
+</div>
+</body>
+</html>

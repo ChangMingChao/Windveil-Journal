@@ -1,0 +1,118 @@
+# delta — core-S03-timing.json（preferences-availability-timing）
+
+## ADDED — mock 控制面扩展（LLM）
+
+```json
+{
+  "note": "preferences-availability-timing 提案为 LLM mock 新增两个控制模式，供时机提议与摘要支线的编排使用：",
+  "extend": [
+    { "method": "PUT", "path": "/_control", "body": "{mode: propose_timing}", "effect": "下一次 propose_timing 调用返回固定草稿（默认 after_months=1, confidence=82, reason 引用可用时段）" },
+    { "method": "PUT", "path": "/_control", "body": "{mode: propose_timing_unavailable}", "effect": "下一次 propose_timing 调用超时，覆盖 S03 EX-P.1 降级" },
+    { "method": "PUT", "path": "/_control", "body": "{mode: summarize_digest}", "effect": "下一次 summarize_preferences 调用返回固定摘要文本（S08 D 支线使用）" }
+  ]
+}
+```
+
+## ADDED — flows：时机提议分支（S08 增量，6 个 flow）
+
+> 追加到 `flows` 数组末尾（下方为数组形态，元素即 6 个 flow）。case_id 复用 test-cases.md 的 ST-S03-16~21。
+
+```json
+  [
+    {
+      "case_id": "ST-S03-16",
+      "type": "normal",
+      "description": "生成时机建议→确认→衔接既有提醒链路（四层边界全链路）",
+      "covers_steps": "S03 分支 P1→P15 + 主图 Step 9→18",
+      "steps": [
+        { "step": "前置：种下一个愿望", "method": "POST", "url": "{{base_url}}/api/v1/wishes", "headers": { "Authorization": "Bearer {{access_token}}" }, "body": { "source": "text", "text": "想在冬天学会滑雪" }, "expected_status": 201, "extract": { "wish_id": "body.wish.id" } },
+        { "step": "前置：声明一条可用时段（作为建议依据）", "method": "POST", "url": "{{base_url}}/api/v1/me/availability", "headers": { "Authorization": "Bearer {{access_token}}" }, "body": { "weekday": 5, "start_minute": 540, "end_minute": 720 }, "expected_status": 201 },
+        { "step": "前置：LLM mock 置为 propose_timing 模式", "mock": { "dependency": "LLM", "strategy": "mock-service", "config": "PUT {{mock_base}}/_control {mode:propose_timing}" }, "method": "PUT", "url": "{{mock_base}}/_control", "body": { "mode": "propose_timing" }, "expected_status": 204 },
+        { "step": "P2→P10: 生成时机建议", "method": "POST", "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals", "headers": { "Authorization": "Bearer {{access_token}}" }, "expected_status": 200, "extract": { "proposal_id": "body.proposal.id" }, "assert": ["body.degraded == false", "body.proposal.status == 'pending'", "body.proposal.validation.valid == true", "body.proposal.confidence >= 0 && body.proposal.confidence <= 100", "body.proposal.timing_type == 'after_months'", "body.proposal.evidence.length >= 1"] },
+        { "step": "P11: 建议不产生任何副作用", "method": "GET", "url": "{{base_url}}/api/test/outbox?user_id={{user_id}}", "expected_status": 200, "assert": ["body.items.length == 0"] },
+        { "step": "P12→P15: 确认建议（空 body）", "method": "POST", "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals/{{proposal_id}}/confirm", "headers": { "Authorization": "Bearer {{access_token}}" }, "body": {}, "expected_status": 200, "assert": ["body.wish.state == 'brewing'", "body.wish.timing.next_trigger_at != null", "body.proposal.status == 'confirmed'", "body.proposal.decided_at != null"] },
+        { "step": "时钟推进 1 个月后触发一轮调度", "mock": { "dependency": "系统时钟", "strategy": "fixed-value", "config": "POST /api/test/clock" }, "method": "POST", "url": "{{base_url}}/api/test/clock", "body": { "now": "2026-10-06T09:00:00+08:00" }, "expected_status": 204 },
+        { "step": "主图 Step 9→17: 调度扫描", "method": "POST", "url": "{{base_url}}/api/test/scheduler/tick", "expected_status": 200, "assert": ["body.enqueued >= 1", "body.delivered >= 1"] },
+        { "step": "Step 18: outbox 恰好 1 条且文案为模板拼接", "method": "GET", "url": "{{base_url}}/api/test/outbox?user_id={{user_id}}", "expected_status": 200, "assert": ["body.items.length == 1", "body.items[0].status == 'delivered'", "contains(body.items[0].body, '滑雪')"] }
+      ]
+    },
+    {
+      "case_id": "ST-S03-17",
+      "type": "normal",
+      "description": "拒绝建议不产生任何副作用",
+      "covers_steps": "S03 分支 P16 / EX-P.3",
+      "steps": [
+        { "step": "前置：种下愿望并生成建议", "method": "POST", "url": "{{base_url}}/api/v1/wishes", "headers": { "Authorization": "Bearer {{access_token}}" }, "body": { "source": "text", "text": "想重新开始画画" }, "expected_status": 201, "extract": { "wish_id": "body.wish.id" } },
+        { "step": "前置：mock 置 propose_timing", "method": "PUT", "url": "{{mock_base}}/_control", "body": { "mode": "propose_timing" }, "expected_status": 204 },
+        { "step": "生成建议", "method": "POST", "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals", "headers": { "Authorization": "Bearer {{access_token}}" }, "expected_status": 200, "extract": { "proposal_id": "body.proposal.id" } },
+        { "step": "P16: 拒绝", "method": "POST", "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals/{{proposal_id}}/reject", "headers": { "Authorization": "Bearer {{access_token}}" }, "expected_status": 200, "assert": ["body.proposal.status == 'rejected'", "body.proposal.decided_at != null"] },
+        { "step": "EX-P.3: wishes 无任何变化", "method": "GET", "url": "{{base_url}}/api/v1/wishes/{{wish_id}}", "headers": { "Authorization": "Bearer {{access_token}}" }, "expected_status": 200, "assert": ["body.state == 'seeded'", "body.timing.next_trigger_at == null", "body.timing_proposal == null"] },
+        { "step": "无任何提醒入箱", "method": "GET", "url": "{{base_url}}/api/test/outbox?user_id={{user_id}}", "expected_status": 200, "assert": ["body.items.length == 0"] }
+      ]
+    },
+    {
+      "case_id": "ST-S03-18",
+      "type": "normal",
+      "description": "依据被删除 → 建议立即失效，确认被拒",
+      "covers_steps": "EX-P.5 + S08 Step 19",
+      "steps": [
+        { "step": "前置：种下愿望", "method": "POST", "url": "{{base_url}}/api/v1/wishes", "headers": { "Authorization": "Bearer {{access_token}}" }, "body": { "source": "text", "text": "想去看海" }, "expected_status": 201, "extract": { "wish_id": "body.wish.id" } },
+        { "step": "前置：可用时段作为依据", "method": "POST", "url": "{{base_url}}/api/v1/me/availability", "headers": { "Authorization": "Bearer {{access_token}}" }, "body": { "weekday": 5, "start_minute": 540, "end_minute": 720 }, "expected_status": 201, "extract": { "window_id": "body.id" } },
+        { "step": "mock 置 propose_timing（free_weekend 依据引用时段）", "method": "PUT", "url": "{{mock_base}}/_control", "body": { "mode": "propose_timing" }, "expected_status": 204 },
+        { "step": "生成建议", "method": "POST", "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals", "headers": { "Authorization": "Bearer {{access_token}}" }, "expected_status": 200, "extract": { "proposal_id": "body.proposal.id" } },
+        { "step": "S08 Step 18: 删除依据时段", "method": "DELETE", "url": "{{base_url}}/api/v1/me/availability/{{window_id}}", "headers": { "Authorization": "Bearer {{access_token}}" }, "expected_status": 204 },
+        { "step": "EX-P.5: 确认被拒", "method": "POST", "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals/{{proposal_id}}/confirm", "headers": { "Authorization": "Bearer {{access_token}}" }, "body": {}, "expected_status": 409, "assert": ["body.code == 'PROPOSAL_EXPIRED'"] },
+        { "step": "提议状态已过期", "method": "GET", "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals", "headers": { "Authorization": "Bearer {{access_token}}" }, "expected_status": 200, "assert": ["body.items[0].status == 'expired'"] }
+      ]
+    },
+    {
+      "case_id": "ST-S03-19",
+      "type": "abnormal",
+      "description": "LLM 降级：无落库、无错误码、零副作用",
+      "covers_steps": "EX-P.1",
+      "steps": [
+        { "step": "前置：mock 置为不可用", "method": "PUT", "url": "{{mock_base}}/_control", "body": { "mode": "propose_timing_unavailable" }, "expected_status": 204 },
+        { "step": "前置：种下愿望", "method": "POST", "url": "{{base_url}}/api/v1/wishes", "headers": { "Authorization": "Bearer {{access_token}}" }, "body": { "source": "text", "text": "想在春天整理阳台" }, "expected_status": 201, "extract": { "wish_id": "body.wish.id" } },
+        { "step": "P2→P5: 生成请求降级", "method": "POST", "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals", "headers": { "Authorization": "Bearer {{access_token}}" }, "expected_status": 200, "assert": ["body.degraded == true", "body.proposal == null"] },
+        { "step": "EX-P.1: 无落库、状态不变", "method": "GET", "url": "{{base_url}}/api/v1/wishes/{{wish_id}}", "headers": { "Authorization": "Bearer {{access_token}}" }, "expected_status": 200, "assert": ["body.state == 'seeded'", "body.timing_proposal == null"] }
+      ]
+    },
+    {
+      "case_id": "ST-S03-20",
+      "type": "normal",
+      "description": "新提议替代旧 pending（结构性单 pending）",
+      "covers_steps": "S03 分支 P7 + UT-S03-33",
+      "steps": [
+        { "step": "前置：种下愿望", "method": "POST", "url": "{{base_url}}/api/v1/wishes", "headers": { "Authorization": "Bearer {{access_token}}" }, "body": { "source": "text", "text": "想去学自由泳" }, "expected_status": 201, "extract": { "wish_id": "body.wish.id" } },
+        { "step": "mock 置 propose_timing", "method": "PUT", "url": "{{mock_base}}/_control", "body": { "mode": "propose_timing" }, "expected_status": 204 },
+        { "step": "第一条建议", "method": "POST", "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals", "headers": { "Authorization": "Bearer {{access_token}}" }, "expected_status": 200, "extract": { "p1": "body.proposal.id" } },
+        { "step": "第二条建议替代第一条", "method": "POST", "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals", "headers": { "Authorization": "Bearer {{access_token}}" }, "expected_status": 200, "extract": { "p2": "body.proposal.id" }, "assert": ["body.proposal.id != '{{p1}}'", "body.proposal.status == 'pending'"] },
+        { "step": "历史中旧提议已过期、仅 1 条 pending", "method": "GET", "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals", "headers": { "Authorization": "Bearer {{access_token}}" }, "expected_status": 200, "assert": ["body.items.length == 2", "count(body.items[?(@.status == 'pending')]) == 1"] }
+      ]
+    },
+    {
+      "case_id": "ST-S03-21",
+      "type": "normal",
+      "description": "确认与调度全链路不调用 LLM 对话（文案仍为模板拼接）",
+      "covers_steps": "分支 P15 + 主图 Step 15 说明",
+      "steps": [
+        { "step": "前置：复用 ST-S03-16 链路至确认完成", "method": "POST", "url": "{{base_url}}/api/v1/wishes", "headers": { "Authorization": "Bearer {{access_token}}" }, "body": { "source": "text", "text": "想在冬天学会滑雪" }, "expected_status": 201, "extract": { "wish_id": "body.wish.id" } },
+        { "step": "mock 置 propose_timing", "method": "PUT", "url": "{{mock_base}}/_control", "body": { "mode": "propose_timing" }, "expected_status": 204 },
+        { "step": "生成并确认", "method": "POST", "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals", "headers": { "Authorization": "Bearer {{access_token}}" }, "expected_status": 200, "extract": { "proposal_id": "body.proposal.id" } },
+        { "step": "确认", "method": "POST", "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals/{{proposal_id}}/confirm", "headers": { "Authorization": "Bearer {{access_token}}" }, "body": {}, "expected_status": 200 },
+        { "step": "重置统计后推进时钟并调度", "method": "POST", "url": "{{mock_base}}/_stats/reset", "expected_status": 204 },
+        { "step": "时钟推进", "method": "POST", "url": "{{base_url}}/api/test/clock", "body": { "now": "2026-10-06T09:00:00+08:00" }, "expected_status": 204 },
+        { "step": "触发调度", "method": "POST", "url": "{{base_url}}/api/test/scheduler/tick", "expected_status": 200, "assert": ["body.delivered >= 1"] },
+        { "step": "调度阶段 LLM 对话调用为 0", "method": "GET", "url": "{{mock_base}}/_stats", "expected_status": 200, "assert": ["body.chat_completions_calls == 0"] }
+      ]
+    }
+  ]
+```
+
+## ADDED — not_orchestrated（S08 增量说明）
+
+```json
+{
+  "note": "S03 时机提议分支的 6 个 ST（ST-S03-16~21）全部编排。EX-P.2（规则校验不通过）与 EX-P.4（confirm 携带时间字段）由 UT-S03-37/38/35 在代码级覆盖——LLM mock 无法稳定产生「非法草稿」模式，且 422 断言不依赖跨服务协作。"
+}
+```

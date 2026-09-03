@@ -1,210 +1,15 @@
-openapi: 3.1.0
-info:
-  title: "未发生事件管理局 — 认证与个人空间 API"
-  version: "0.1.0"
-  description: |
-    来源：S01 时序图（core-S01-onboarding-first-wish.md）与架构概要 3.2 节的自管 JWT 方案。
-    设计原则：首次体验不出现任何表单，个人空间以匿名主体建立；邮箱绑定为后置的可选动作。
-servers:
-  - url: "https://{host}/api/v1"
-    variables:
-      host:
-        default: "localhost:8000"
-security:
-  - bearerAuth: []
-tags:
-  - name: auth
-    description: "匿名建号、邮箱绑定、令牌管理"
-  - name: onboarding
-    description: "首次体验的温柔问题"
+# delta — api/auth.yaml（preferences-availability-timing）
+
+## ADDED — tag: preferences
+
+```yaml
   - name: preferences
     description: "偏好与可用时段的管理（S08）。来源：core-S08-preferences-availability.md。"
+```
 
+## ADDED — GET /me/preferences
 
-paths:
-  /auth/anonymous:
-    post:
-      operationId: createAnonymousSpace
-      tags: [auth]
-      summary: "无表单建立匿名个人空间"
-      description: "来源：S01 Step 3 → Step 6。用户点「开始」即建号，同时置 onboarded_at，使 EX-12.1（跳过后未输入即离开）不会重复首次体验。"
-      security: []
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                timezone:
-                  type: string
-                  description: "IANA 时区名，用于计算自然周与季节触发"
-                  default: "Asia/Shanghai"
-      responses:
-        '201':
-          description: "个人空间已建立，refresh token 以 httpOnly Cookie 下发"
-          headers:
-            Set-Cookie:
-              description: "refresh_token=<jwt>; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000"
-              schema: { type: string }
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/AuthResult' }
-        '503':
-          description: "建号失败，DB 不可用（EX-3.1）。前端保留本地草稿并提示「这里暂时打不开，你写的还在这台设备上」"
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
-
-  /auth/link-email:
-    post:
-      operationId: linkEmail
-      tags: [auth]
-      summary: "为匿名空间绑定邮箱与密码"
-      description: "来源：S01「待补设计 1」。不绑定邮箱的用户换设备后将永久失去愿望，因此该端点是 MVP 必需项，但其界面尚未在 Phase 2 定义。"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [email, password]
-              properties:
-                email: { type: string, format: email, maxLength: 254 }
-                password: { type: string, minLength: 8, maxLength: 128 }
-      responses:
-        '200':
-          description: "绑定成功，账号从匿名转为可跨设备登录"
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/UserProfile' }
-        '409':
-          description: "该邮箱已被其他账号占用（EMAIL_ALREADY_LINKED）"
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
-        '422':
-          description: "邮箱格式非法或密码不足 8 位（VALIDATION_FAILED）"
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
-  /auth/login:
-    post:
-      operationId: login
-      tags: [auth]
-      summary: "已绑定邮箱的用户在新设备登录"
-      description: "来源：S01「待补设计 1」的必然结果，时序图中无对应箭头。绑定能力若不落地，本端点应一并删除。"
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [email, password]
-              properties:
-                email: { type: string, format: email }
-                password: { type: string }
-      responses:
-        '200':
-          description: "登录成功"
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/AuthResult' }
-        '401':
-          description: "邮箱或密码不正确（INVALID_CREDENTIALS）。响应文案不区分「邮箱不存在」与「密码错误」，避免账号枚举"
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
-        '429':
-          description: "尝试过于频繁（RATE_LIMITED）"
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
-
-  /auth/refresh:
-    post:
-      operationId: refreshToken
-      tags: [auth]
-      summary: "用 httpOnly Cookie 换新的 access token"
-      description: "来源：架构概要 3.2（access 15 分钟 / refresh 30 天）。时序图未画，属基础设施端点。"
-      security: []
-      responses:
-        '200':
-          description: "签发新的 access token 并轮换 refresh token"
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/AuthResult' }
-        '401':
-          description: "refresh token 缺失、过期或已被撤销（REFRESH_INVALID）"
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
-
-  /auth/logout:
-    post:
-      operationId: logout
-      tags: [auth]
-      summary: "撤销当前 refresh token"
-      description: "来源：IA 5.4 的 /me 页面。撤销后 Cookie 立即失效。"
-      responses:
-        '204':
-          description: "已登出，无响应体"
-
-  /me:
-    get:
-      operationId: getMe
-      tags: [auth]
-      summary: "读取当前用户资料与首次体验状态"
-      description: "来源：S01 EX-12.1。前端据 onboarded_at 是否为空决定进入 /welcome 还是 /garden。"
-      responses:
-        '200':
-          description: "当前用户资料"
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/UserProfile' }
-        '401':
-          description: "未认证（UNAUTHENTICATED）"
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
-
-  /onboarding/answers:
-    post:
-      operationId: submitOnboardingAnswers
-      tags: [onboarding]
-      summary: "提交温柔问题的回答，可为空数组"
-      description: "来源：S01 Step 9 → Step 11。跳过全部问题时提交空数组；写入失败也返回 204（EX-10.1），不为增强项中断首次体验。"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [answers]
-              properties:
-                answers:
-                  type: array
-                  maxItems: 10
-                  items:
-                    type: object
-                    required: [question_key]
-                    properties:
-                      question_key:
-                        type: string
-                        description: "问题标识，如 wanted_but_not_done"
-                      answer_text:
-                        type: [string, "null"]
-                        maxLength: 500
-                        description: "可为 null 表示该题留空"
-      responses:
-        '204':
-          description: "已收下（写入失败时同样返回 204，见 EX-10.1）"
-        '401':
-          description: "未认证（UNAUTHENTICATED）"
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
+```yaml
   /me/preferences:
     get:
       operationId: listPreferences
@@ -238,7 +43,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+```
 
+## ADDED — PUT /me/preferences
+
+```yaml
     put:
       operationId: declarePreference
       tags: [preferences]
@@ -276,7 +85,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+```
 
+## ADDED — POST /me/preferences/{pref_id}/revoke
+
+```yaml
   /me/preferences/{pref_id}/revoke:
     parameters:
       - name: pref_id
@@ -304,7 +117,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+```
 
+## ADDED — DELETE /me/preferences/{pref_id}
+
+```yaml
   /me/preferences/{pref_id}:
     parameters:
       - name: pref_id
@@ -324,7 +141,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+```
 
+## ADDED — GET /me/availability
+
+```yaml
   /me/availability:
     get:
       operationId: listAvailability
@@ -348,7 +169,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+```
 
+## ADDED — POST /me/availability
+
+```yaml
     post:
       operationId: createAvailabilityWindow
       tags: [preferences]
@@ -385,7 +210,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+```
 
+## ADDED — PATCH /me/availability/{window_id} 与 DELETE /me/availability/{window_id}
+
+```yaml
   /me/availability/{window_id}:
     parameters:
       - name: window_id
@@ -440,63 +269,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+```
 
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: "access token，有效期 15 分钟；refresh token 走 httpOnly Cookie，不在 Authorization 头中出现"
+## ADDED — schemas: PreferenceItem / PreferenceMeta / AvailabilityWindow
 
-  schemas:
-    ErrorResponse:
-      type: object
-      required: [code, message]
-      properties:
-        code:
-          type: string
-          description: "机器可读错误码，如 INVALID_CREDENTIALS"
-        message:
-          type: string
-          description: "人类可读描述。面向用户的文案禁止出现「任务」「逾期」「未完成」等词"
-        details:
-          type: object
-          additionalProperties: true
-          description: "字段级校验错误等附加信息"
-
-    AuthResult:
-      type: object
-      required: [access_token, token_type, expires_in, user]
-      properties:
-        access_token: { type: string }
-        token_type: { type: string, const: "Bearer" }
-        expires_in:
-          type: integer
-          description: "access token 剩余秒数，固定 900"
-        user: { $ref: '#/components/schemas/UserProfile' }
-
-    UserProfile:
-      type: object
-      required: [id, is_anonymous, onboarded_at, timezone]
-      properties:
-        id: { type: string, format: uuid }
-        email:
-          type: [string, "null"]
-          format: email
-          description: "未绑定邮箱时为 null"
-        is_anonymous:
-          type: boolean
-          description: "true 表示尚未绑定邮箱，换设备后无法找回"
-        onboarded_at:
-          type: [string, "null"]
-          format: date-time
-          description: "首次体验完成时间。非空即不再进入 /welcome（EX-12.1）"
-        timezone:
-          type: string
-          description: "IANA 时区名，提醒周预算按该时区的自然周计算"
-        created_at: { type: string, format: date-time }
-
+```yaml
     PreferenceItem:
       type: object
       required: [id, kind, pref_key, source, value, created_at]
@@ -558,3 +335,4 @@ components:
           description: "服务端解密后的备注明文，仅 GET 返回本人"
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+```
