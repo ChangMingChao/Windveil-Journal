@@ -40,7 +40,7 @@ docker-compose.yml       单机部署拓扑
 
 ## 本地开发
 
-准备 Python 3.12、uv、pnpm。如需媒体上传测试，准备可用的 Docker Compose 环境。
+准备 Python 3.12、uv、npm。如需媒体上传测试，准备可用的 Docker Compose 环境。
 
 1. 安装依赖：
 
@@ -49,7 +49,7 @@ docker-compose.yml       单机部署拓扑
    uv sync --extra dev
 
    cd ../frontend
-   pnpm install
+   npm install
    ```
 
 2. 初始化数据库：
