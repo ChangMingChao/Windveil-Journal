@@ -49,7 +49,7 @@ docker-compose.yml       单机部署拓扑
    uv sync --extra dev
 
    cd ../frontend
-   pnpm install
+   npm install
    ```
 
 2. 初始化数据库：
