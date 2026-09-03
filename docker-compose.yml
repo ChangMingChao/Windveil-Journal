@@ -5,7 +5,7 @@
 #   * 卷的持久化与备份是这套部署的第一等公民（§3.3、§5）
 #   * scheduler 必须单活：replicas 固定 1，进程内另有文件锁兜底
 
-name: unhappened
+name: Windveil-Journal
 
 x-app-env: &app-env
   APP_ENV: ${APP_ENV:?APP_ENV 必须显式设置}
