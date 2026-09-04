@@ -154,7 +154,9 @@ CREATE INDEX idx_timing_proposals_wish_history
 
 
 def upgrade() -> None:
-    op.exec_driver_sql(DDL)
+    # 与 0005 相同的逐条执行：按「分号+换行」切分，每条交给 op.execute
+    for stmt in [x.strip() for x in DDL.split(";\n") if x.strip()]:
+        op.execute(stmt)
 
 
 def downgrade() -> None:
