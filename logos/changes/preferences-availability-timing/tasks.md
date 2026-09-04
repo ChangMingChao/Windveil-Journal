@@ -26,7 +26,17 @@
 2. S08 编排为 4 个 flow 而非原计划的 5 个：撤回联动（ST-S08-03）与声明推断并列（ST-S08-02）依赖 inferred 行 DB fixture，编排环境为纯 API 无此能力；同源联动「删除时段 → 建议失效」已由 ST-S03-18 以纯 API 路径覆盖。coverage 数字已按 105/78/14/13 自洽。
 
 ## [code] 代码实现
-（本段在 plan 阶段留空：本提案需要实现数据库模型、API、服务、前端、测试和 OpenLogos reporter；具体切片由 merge 后的 slice-planner 基于已合并规格与真实 UT/ST ID 规划。）
+（原留空说明见 implementation-manifest.md「preferences-availability-timing 增量交付」一节；三批全部闭环，已提交。）
+
+- [x] **Batch 8**：迁移 0008 + 三张新表模型 + `app/preferences.py` + 8 个偏好/时段端点 + UT-S08-01~16/18、ST-S08-01/04/05（20 测试全绿）
+- [x] **Batch 9**：`app/proposals.py` 四层链路 + `app/agent.py` 两个新 Provider 方法 + 3 个提议端点 + WishDetail.timing_proposal 装配 + scheduler 低频任务（过期扫描/每日摘要）+ UT-S03-29~40、ST-S03-16~21、UT-S08-17/19/20、ST-S08-02/03/06（23 测试全绿）
+- [x] **Batch 10**：`scripts/smoke-core.py` 扩至 20 项（SMOKE-core-19/20 + 表数量 20/36）+ 前端 Me.tsx「它记得我什么」+ WishDetail 建议确认卡 + /me 路由（构建 + 7 vitest 通过）
+- [x] 全量回归：pytest 313 passed / 2 skipped / 0 failed；test-results.jsonl 304 个唯一 ID（303 pass / 1 skip / 0 fail）
+
+实现中发现并修正的三处规格问题（详见 implementation-manifest）：
+1. `user_preferences` 唯一索引与「声明不覆盖推断」冲突 → 索引加入 `source` 列（schema/迁移/模型/测试文档四处同步）。
+2. auth.yaml「响应不回显 note 明文」与 AvailabilityOut 契约矛盾 → 修正描述（敏感值不回显的边界是日志/错误/跨用户）。
+3. TickResult 新增统计字段导致 ST-S03-06 全量相等断言失效 → 逐字段断言。
 
 ## [deploy] 部署任务
 - [ ] 按合并后的部署方案部署到 staging
