@@ -154,9 +154,12 @@ CREATE INDEX idx_timing_proposals_wish_history
 
 
 def upgrade() -> None:
-    # 与 0005 相同的逐条执行：按「分号+换行」切分，每条交给 op.execute
+    # 逐条执行，且必须走 exec_driver_sql 而非 op.execute：DDL 注释里含 JSON 示例
+    # （{"valid":true,...}），text() 会把 ":true" 当绑定参数占位符而报错；
+    # exec_driver_sql 原样下发给 sqlite3 驱动，不做参数解析。
+    bind = op.get_bind()
     for stmt in [x.strip() for x in DDL.split(";\n") if x.strip()]:
-        op.execute(stmt)
+        bind.exec_driver_sql(stmt)
 
 
 def downgrade() -> None:
