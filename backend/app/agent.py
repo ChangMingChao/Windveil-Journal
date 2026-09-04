@@ -151,6 +151,48 @@ FALLBACK_STEPS: dict[str, str] = {
 FALLBACK_DEFAULT = "不用现在做任何事也可以。只是想一想：它发生的那天，你希望是什么天气？"
 
 
+
+
+
+class TimingProposalDraft(BaseModel):
+    """S03 时机提议分支的模型草稿。Pydantic 二次校验失败等同 None（EX-P.1）。
+
+    timing_type 只允许 4 种时间类——signal（when_tired）与 none 不是「可执行的时间」，
+    不由模型提议（架构 5.4）。evidence 由服务端组装（依据条目 ID 来自服务端检索，
+    模型只产出时机、理由与置信度），不信任模型自报的引用。
+    """
+
+    timing_type: Literal["season", "month_day", "after_months", "free_weekend"]
+    timing_value: str | None = Field(default=None, max_length=20)
+    reason: str | None = Field(default=None, max_length=200)
+    confidence: int = Field(ge=0, le=100)
+
+
+class PreferenceDigest(BaseModel):
+    """S08 摘要支线 D3 的产出。只浓缩偏好明细，不注入对话历史（上下文有界）。"""
+
+    summary: str = Field(min_length=1, max_length=1000)
+
+
+PROPOSAL_PROMPT = """你要为用户的一件「还没发生的事」建议一个合适的时机，只返回 JSON：
+{"timing_type": "season|month_day|after_months|free_weekend", "timing_value": "...", "reason": "...", "confidence": 0-100}
+
+规则：
+- timing_type 只能是这四种之一；用户没提明确日期时优先 free_weekend 或 after_months。
+- season 的 timing_value 是 spring/summer/autumn/winter；month_day 是 YYYY-MM 或 YYYY-MM-DD；
+  after_months 是 1/3/6/12；free_weekend 不需要 timing_value。
+- reason 用一句话说清依据（比如「你说过周五上午通常有空」），不超过 60 字，引用你看到的依据。
+- confidence 反映依据的可靠程度：有用户自己说过的话就给 80 以上，纯推测不超过 70。
+全程用第二人称「你」。不确定就给低置信度，不要编造用户没说过的话。
+"""
+
+DIGEST_PROMPT = """把下面这些「关于用户偏好的条目」浓缩成一段不超过 200 字的理解，只返回 JSON：
+{"summary": "..."}
+
+规则：只概括条目里写了的内容，不推演、不补全、不评价。分不清来源时用中性的说法。
+"""
+
+
 def fallback_step(feeling: str | None) -> StepSuggestion:
     text = FALLBACK_STEPS.get(feeling or "", FALLBACK_DEFAULT)
     return StepSuggestion(text=text, est_minutes=1, involves_cost=False, involves_others=False)
@@ -168,6 +210,14 @@ class LLMProvider(Protocol):
     async def draft_memory(
         self, *, original_text: str, feeling: str | None, timeline: list[str]
     ) -> MemoryDraft | None: ...
+
+    async def propose_timing(self, *, wish_text: str, context: str) -> TimingProposalDraft | None:
+        """S03 时机提议分支 P4→P5。超时 / schema 不合法一律 None（EX-P.1）。"""
+        ...
+
+    async def summarize_preferences(self, *, entries: list[str]) -> PreferenceDigest | None:
+        """S08 摘要支线 D2→D3。失败返回 None：保持旧 digest，下一周期自然重试（EX-D2.1）。"""
+        ...
 
 
 class OpenAICompatibleProvider:
@@ -250,6 +300,40 @@ class OpenAICompatibleProvider:
             logger.warning("llm_unavailable", extra={"error_type": type(exc).__name__})
             return None
         return _parse_model(MemoryDraft, resp)
+
+    async def propose_timing(self, *, wish_text: str, context: str) -> TimingProposalDraft | None:
+        try:
+            resp = await self._client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": PROPOSAL_PROMPT},
+                    {
+                        "role": "user",
+                        "content": f"这件事：{wish_text}\n/ 它的依据：\n{context}",
+                    },
+                ],
+                response_format={"type": "json_object"},
+            )
+        except Exception as exc:
+            logger.warning("llm_unavailable", extra={"error_type": type(exc).__name__})
+            return None
+        return _parse_model(TimingProposalDraft, resp)
+
+    async def summarize_preferences(self, *, entries: list[str]) -> PreferenceDigest | None:
+        records = chr(10).join(f"- {e}" for e in entries) or "（还没有任何条目）"
+        try:
+            resp = await self._client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": DIGEST_PROMPT},
+                    {"role": "user", "content": records},
+                ],
+                response_format={"type": "json_object"},
+            )
+        except Exception as exc:
+            logger.warning("llm_unavailable", extra={"error_type": type(exc).__name__})
+            return None
+        return _parse_model(PreferenceDigest, resp)
 
     async def understand_wish(self, text: str) -> UnderstandResult | None:
         try:

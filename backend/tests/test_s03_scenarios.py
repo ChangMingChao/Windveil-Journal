@@ -244,9 +244,14 @@ async def test_ST_S03_06_lock_contention_is_silent(env) -> None:  # noqa: ANN001
     try:
         tick = await client.post("/api/test/scheduler/tick")
         assert tick.status_code == 200
-        assert tick.json() == {
-            "scanned": 0, "enqueued": 0, "deferred": 0, "delivered": 0, "failed": 0
-        }
+        # 逐字段断言：锁被占用时五个核心统计全为零。preferences-availability-timing
+        # 提案为 TickResult 新增了 expired_proposals / digest_updated 两个统计，
+        # 本用例关心的是既有字段，不做全量相等断言以保持对合法扩展不敏感。
+        body = tick.json()
+        assert {
+            k: body[k]
+            for k in ("scanned", "enqueued", "deferred", "delivered", "failed")
+        } == {"scanned": 0, "enqueued": 0, "deferred": 0, "delivered": 0, "failed": 0}
     finally:
         holder.release()
 

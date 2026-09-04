@@ -56,8 +56,8 @@ class TickResult:
     deferred: int = 0
     delivered: int = 0
     failed: int = 0
-
-
+    expired_proposals: int = 0
+    digest_updated: int = 0
 class FileLock:
     """排他文件锁。SQLite 无咨询锁，用它保证同机单活（EX-9.1）。"""
 
@@ -309,6 +309,13 @@ async def run_tick() -> TickResult:
                         continue
                     await _deliver_one(session, row, result)
 
+                # 低频任务 1：提议过期扫描（S03 分支第 3 层，S08 增补）
+                from app.proposals import expire_stale_proposals
+                result.expired_proposals = await expire_stale_proposals(session)
+
+                # 低频任务 2：偏好摘要生成（S08 摘要支线 D1–D4，每日一次）
+                result.digest_updated = await refresh_preference_digests(session)
+
                 await _beat(session)
         return result
     finally:
@@ -316,6 +323,77 @@ async def run_tick() -> TickResult:
 
 
 INSTANCE_ID = f"{os.uname().nodename if hasattr(os, 'uname') else 'host'}-{os.getpid()}"
+
+
+DIGEST_INTERVAL = timedelta(hours=24)  # 需求 5.4 第 5 条的当前假设：每日低频生成
+
+
+async def refresh_preference_digests(session: AsyncSession) -> int:
+    """S08 摘要支线 D1–D4：为偏好有更新（超过间隔）的用户重新生成「它的理解」。
+
+    LLM 降级时保持既有 digest 不变、不重试队列（EX-D2.1）；没有 entry 行的用户跳过。
+    """
+    from app.agent import get_llm_provider
+    from app.models import UserPreference
+    from app.preferences import upsert_digest
+
+    provider = get_llm_provider()
+    if provider is None:
+        return 0
+    now = clock.now()
+    updated = 0
+    owners = (
+        (
+            await session.execute(
+                select(UserPreference.owner_id)
+                .where(
+                    UserPreference.kind == "entry",
+                    UserPreference.revoked_at.is_(None),
+                )
+                .distinct()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for owner_id in owners:
+        rows = (
+            (
+                await session.execute(
+                    select(UserPreference).where(
+                        UserPreference.owner_id == owner_id,
+                        UserPreference.kind == "digest",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        digest = rows[0] if rows else None
+        if digest is not None and digest.updated_at and now - digest.updated_at < DIGEST_INTERVAL:
+            continue
+        entries = (
+            (
+                await session.execute(
+                    select(UserPreference).where(
+                        UserPreference.owner_id == owner_id,
+                        UserPreference.kind == "entry",
+                        UserPreference.revoked_at.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # owner_guard：digest / entry 行的读写都带 owner_id；此处在 bypass 上下文内，
+        # 显式按 owner_id 过滤以保持隔离语义
+        texts = [f"{r.pref_key}: {r.value_enc}" for r in entries]
+        result = await provider.summarize_preferences(entries=texts)
+        if result is None:
+            continue  # EX-D2.1：保持旧值，下一周期自然重试
+        await upsert_digest(owner_id, result.summary)
+        updated += 1
+    return updated
 
 
 async def _beat(session: AsyncSession) -> None:

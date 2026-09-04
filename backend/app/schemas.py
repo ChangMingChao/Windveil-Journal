@@ -126,6 +126,7 @@ class WishDetail(WishCard):
     photo_media_ids: list[UUID] = Field(default_factory=list)
     understanding: dict[str, Any] | None = None
     pending_question: bool = False
+    timing_proposal: "TimingProposalOut | None" = None
     amended_from: str | None = None
     current_step: dict[str, Any] | None = None
     timeline: list[dict[str, Any]] = Field(default_factory=list)
@@ -200,3 +201,125 @@ class MemoryListResponse(BaseModel):
     items: list[MemoryCard]
     next_cursor: str | None = None
     lived_pages: int
+
+
+# ---------- auth.yaml（preferences tag，S08）----------
+
+PreferenceKey = Literal["relaxation", "pace", "companion", "budget", "other"]
+
+
+class DeclarePreferenceRequest(BaseModel):
+    """服务端强制 source=declared / confidence=100；请求中的任何 source/confidence 被忽略。"""
+
+    pref_key: PreferenceKey
+    value: str = Field(min_length=1, max_length=200)
+
+
+class PreferenceItem(BaseModel):
+    id: UUID
+    kind: Literal["entry", "digest"]
+    pref_key: str
+    source: Literal["declared", "inferred"]
+    confidence: int
+    value: str
+    revoked_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+class PreferenceMeta(BaseModel):
+    """写操作响应：只含元数据，不含 value 明文（敏感值不回显，UT-S08-04）。"""
+
+    id: UUID
+    kind: Literal["entry", "digest"]
+    pref_key: str
+    source: Literal["declared", "inferred"]
+    confidence: int
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+class PreferenceListResponse(BaseModel):
+    items: list[PreferenceItem]
+    digest: PreferenceItem | None = None
+
+
+class AvailabilityCreateRequest(BaseModel):
+    """跨字段校验（end > start 等）在服务层做，统一返回 AVAILABILITY_INVALID（EX-23.1）。"""
+
+    weekday: int
+    start_minute: int
+    end_minute: int
+    note: str | None = Field(default=None, max_length=50)
+
+
+class AvailabilityUpdateRequest(BaseModel):
+    weekday: int | None = None
+    start_minute: int | None = None
+    end_minute: int | None = None
+    note: str | None = Field(default=None, max_length=50)
+
+
+class AvailabilityOut(BaseModel):
+    id: UUID
+    weekday: int
+    start_minute: int
+    end_minute: int
+    note: str | None = None
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+class AvailabilityListResponse(BaseModel):
+    items: list[AvailabilityOut]
+
+
+# ---------- wishes.yaml（TimingProposal，S03 时机提议分支）----------
+
+
+class ProposalEvidence(BaseModel):
+    kind: Literal["preference", "availability", "timeline"]
+    id: UUID
+
+
+class ProposalValidation(BaseModel):
+    valid: bool
+    reason_code: str | None = None
+
+
+class TimingProposalOut(BaseModel):
+    id: UUID
+    wish_id: UUID
+    status: Literal["pending", "confirmed", "rejected", "expired"]
+    timing_type: Literal["season", "month_day", "after_months", "free_weekend"]
+    timing_value: str | None = None
+    proposed_trigger_at: datetime | None = None
+    reason: str | None = None
+    confidence: int
+    evidence: list[ProposalEvidence] = Field(default_factory=list)
+    validation: ProposalValidation
+    created_at: datetime
+    expires_at: datetime
+    decided_at: datetime | None = None
+
+
+class ProposalGenerateResult(BaseModel):
+    proposal: TimingProposalOut | None = None
+    degraded: bool
+
+
+class ProposalConfirmResult(BaseModel):
+    wish: WishDetail
+    proposal: TimingProposalOut
+
+
+class ProposalRejectResult(BaseModel):
+    proposal: TimingProposalOut
+
+
+class ProposalListResponse(BaseModel):
+    items: list[TimingProposalOut]
+
+
+
+WishDetail.model_rebuild()

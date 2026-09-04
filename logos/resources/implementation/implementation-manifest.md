@@ -1,6 +1,6 @@
 # 实现清单（Phase 3 Step 5）
 
-> 最后更新：2026-09-02｜模块：core｜阶段：Batch 1–7 / 7 全部交付
+> 最后更新：2026-09-03｜模块：core｜阶段：Batch 1–7 交付 + preferences-availability-timing 增量（Batch 8–10）
 
 ## 分批策略（六维打分结果）
 
@@ -468,3 +468,40 @@ Batch 1–7 交付之后，`staging` 部署演练又改动了几处后端代码�
 - 前端 `npm run test:run`：7 个测试通过；`npm run build`：通过。
 - `openlogos change-lint`：`PASS（7/7）`。
 - 后端测试代码已补齐真实 HTTP/数据库行为断言；当前机器的 Anaconda `_ssl` DLL 加载失败，阻塞 pytest 收集，未将环境故障计为业务失败。
+
+## preferences-availability-timing 增量交付（2026-09-03，Batch 8–10）
+
+### 覆盖用例（批前声明）
+
+- **Batch 8**：UT-S08-01 ~ UT-S08-16、UT-S08-18（15 个）+ ST-S08-01 / 04 / 05（3 个）
+- **Batch 9**：UT-S03-29 ~ UT-S03-40（12 个）+ ST-S03-16 ~ 21（6 个）+ UT-S08-17 / 19 / 20、ST-S08-02 / 03 / 06（6 个）
+- 未覆盖并已说明：UT-S08-14（跨午夜拆两行）已实现为两行各自 201 的 HTTP 断言；ST-S08-07 / ST-S08-08 为 `[manual]`（来源徽标视觉分层、空态文案走查），按规范不写 JSONL
+
+### 业务代码
+
+| 文件 | 职责 | 对应规格 |
+|------|------|---------|
+| `app/models.py` | `UserPreference`（declared/inferred + digest 行）/ `AvailabilityWindow` / `TimingProposal` 三模型 + 约束 | schema.sql（0008 迁移逐条对齐） |
+| `app/preferences.py`（新增） | 偏好 UPSERT（声明不覆盖推断）/ 撤回（软失效留痕迹）/ 硬删；时段 CRUD；`expire_proposals_referencing`（同事务失效引用条目的 pending 建议）；`upsert_digest` | auth.yaml preferences tag、core-S08 时序图 |
+| `app/proposals.py`（新增） | TimingProposal 四层链路：有界上下文组装（evidence 服务端检索，不信任模型自报）→ plan_timing 确定性校验（invalid 入库即 expired 留审计）→ confirm 复用 set_timing / reject 不写 wishes | core-S03 时机提议分支 P1–P16、架构 5.4 |
+| `app/agent.py`（扩展） | `propose_timing` / `summarize_preferences` + TimingProposalDraft（timing_type 限 4 种时间类）/ PreferenceDigest | 架构 5.1 增补 |
+| `app/scheduler.py`（扩展） | TickResult 新增 `expired_proposals` / `digest_updated`；低频任务：提议过期扫描 + 每日偏好摘要（超过 24h 才重新生成；LLM 降级保持旧值不重试，EX-D2.1） | S08 摘要支线 D1–D4 |
+| `app/api.py`（新增 11 个端点） | 偏好 4 + 可用时段 4（写响应不回显 value）；提议生成/列表/confirm（body 必须为空）/reject | api/*.yaml |
+| `app/steps.py` → `detail_of` | WishDetail 装配 `timing_proposal`（当前 pending 建议卡） | wishes.yaml WishDetail |
+| `migrations/versions/0008_preferences_availability_timing.py` | 三张新表 + 7 索引（DDL 与 schema.sql 逐字节一致，脚本生成） | 部署方案「五·增补」 |
+| `scripts/smoke-core.py` | SMOKE-core-19（声明/读取 + 不回显 + 密文断言）、SMOKE-core-20（时段保存/读取/清理）；表数量断言 17→20、索引 29→36 | smoke 用例 |
+| `frontend/src/pages/Me.tsx`（新增）+ `src/lib/remembered.ts`（新增）+ `WishDetail.tsx`（建议卡）+ `App.tsx`（/me 路由）+ `api/types.ts` | 「它记得我什么」管理区（来源徽标 / 声明输入 / 撤回痕迹 / 时段管理）+ P3 建议确认卡（确认前无任何提醒的提示文案） | core-05 设计文档 |
+
+### 实现中发现并修正的规格问题（三处）
+
+1. **`user_preferences` 的唯一索引与「声明不覆盖推断」冲突（UT-S08-11 暴露）。** schema.sql 原唯一索引 `(owner_id, kind, pref_key)` 会让 declared 与 inferred 的同 key 两行无法并存，直接违反需求 S08 AC-01「不互相覆盖、不丢失」。已改为 `(owner_id, kind, pref_key, source)`，同步修正 schema.sql、0008 迁移、models.py 与 core-S08-test-cases.md 的 UT-S08-11 描述。
+2. **auth.yaml 的「响应不回显 note 明文」与 AvailabilityOut 契约自相矛盾。** note 是用户刚写下的备忘，保存响应原样返回是体验的一部分（且 AvailabilityOut schema 本身含 note 字段）。「敏感值不回显」的真实边界是日志、错误响应与跨用户访问——已修正 auth.yaml 描述（提案 delta 同步）。
+3. **`TickResult` 新增统计字段导致 ST-S03-06 的全量 dict 相等断言失效。** 该用例关心的是锁被占用时五个核心统计为零，已改为逐字段断言，对合法扩展保持不敏感。
+
+### 运行结果
+
+```text
+pytest：313 passed, 2 skipped（新增 46 用例：Batch 8 的 18 + Batch 9 的 28）
+vitest：7 passed（前端既有测试；Me/WishDetail 无新 UT/ST ID，由构建与 [manual] 覆盖）
+test-results.jsonl：282 条（281 pass / 1 skip / 0 fail），无重复 ID
+smoke runner：20 项（SMOKE-core-19/20 为 ALL 环境可执行）

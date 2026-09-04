@@ -549,9 +549,12 @@ CREATE TABLE user_preferences (
 -- 撤回（软失效，保留痕迹）与删除（硬删除，无影子）是两个独立动作；
 -- 摘要作为 kind='digest' 行与本表同生共死，同样可查看、可删除（S08）
 
--- 同一用户同一 kind+key 只有一行：声明是 UPSERT（最新为准），摘要只保留最近一份
+-- 唯一性按 (owner_id, kind, pref_key, source)：
+--   declared 行同 key 只有一条（UPSERT 最新为准）；inferred 行同 key 同样至多一条；
+--   两者并存是需求 S08 AC-01 的「不互相覆盖、不丢失」——唯一索引因此必须含 source。
+--   digest 行 pref_key='overall' 且 source 恒为 inferred，仍然只保留最近一份。
 CREATE UNIQUE INDEX idx_user_preferences_unique_key
-  ON user_preferences(owner_id, kind, pref_key);
+  ON user_preferences(owner_id, kind, pref_key, source);
 -- 「它记得我什么」列表：默认只取未撤回行（S08 Step 3）
 CREATE INDEX idx_user_preferences_owner_active
   ON user_preferences(owner_id, kind, created_at) WHERE revoked_at IS NULL;

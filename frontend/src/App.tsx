@@ -6,6 +6,7 @@ import Garden from "./pages/Garden";
 import WishDetailPage from "./pages/WishDetail";
 import Book from "./pages/Book";
 import MemoryPage from "./pages/MemoryPage";
+import Me from "./pages/Me";
 
 /** 匿名建号：没有表单，点开就有一个属于自己的地方（S01 Step 3）。 */
 function useAnonymousSpace(): { ready: boolean; failed: boolean; retry: () => void } {
@@ -112,6 +113,7 @@ export default function App() {
           <Route path="/wish/:wishId" element={<WishDetailPage />} />
           <Route path="/book" element={<Book />} />
           <Route path="/book/:memoryId" element={<MemoryPage />} />
+          <Route path="/me" element={<Me />} />
           <Route path="*" element={<Navigate to="/garden" replace />} />
         </Routes>
       </div>

@@ -36,6 +36,13 @@ MOODS = ("relieved", "healed", "tearful", "calm", "proud", "unspeakable")
 MEMORY_STATUSES = ("draft", "published")
 # 可被 Scheduler 补草拟、也可被用户手动编辑的三段正文（S06 EX-7.1 的 edited_fields 取值）
 MEMORY_DRAFTED_FIELDS = ("title", "cause", "process")
+# S08：偏好的两种来源与两种行形态；提议只允许 4 种时间类（signal/none 不是「可执行的时间」）
+PREFERENCE_SOURCES = ("declared", "inferred")
+PREFERENCE_KINDS = ("entry", "digest")
+PREFERENCE_KEYS = ("relaxation", "pace", "companion", "budget", "other")
+DIGEST_KEY = "overall"
+PROPOSAL_TIMING_TYPES = ("season", "month_day", "after_months", "free_weekend")
+PROPOSAL_STATUSES = ("pending", "confirmed", "rejected", "expired")
 
 
 class Base(DeclarativeBase):
@@ -517,6 +524,137 @@ class OrphanObject(Base):
     )
 
 
+class UserPreference(Base):
+    """偏好记忆（S08）。「你说过的」与「我猜的」分开成行并列，不互相覆盖。
+
+    kind='digest' 是 Scheduler 定期生成的「它的理解」摘要行（同表存储、同样可删除），
+    pref_key 恒为 overall；摘要不是撤回语义的对象，revoked_at 恒为 NULL。
+    """
+
+    __tablename__ = "user_preferences"
+
+    id: Mapped[uuid.UUID] = _pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(Text, nullable=False, default="entry")
+    pref_key: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    value_enc: Mapped[str] = mapped_column(EncryptedText, nullable=False)
+    confidence: Mapped[int] = mapped_column(Integer, nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(TZDateTime)
+    created_at: Mapped[datetime] = mapped_column(
+        TZDateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TZDateTime, nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "owner_id", "kind", "pref_key", "source", name="uq_user_preferences_unique_key"
+        ),
+        CheckConstraint("kind IN ('entry', 'digest')", name="user_preferences_kind_check"),
+        CheckConstraint("source IN ('declared', 'inferred')", name="user_preferences_source_check"),
+        CheckConstraint("confidence BETWEEN 0 AND 100", name="user_preferences_confidence_check"),
+        # 用户声明不承认任何「不确定」：declared 行置信度必须为 100
+        CheckConstraint(
+            "source = 'inferred' OR confidence = 100",
+            name="user_preferences_declared_is_certain",
+        ),
+        # 摘要行不是撤回语义的对象（删除即可）
+        CheckConstraint(
+            "kind = 'entry' OR revoked_at IS NULL",
+            name="user_preferences_digest_never_revoked",
+        ),
+    )
+
+
+class AvailabilityWindow(Base):
+    """可用时段（S08）。free_weekend 类时机计算的依据，「询问要克制」的数据基础。
+
+    结构化字段（周几 + 分钟区间）明文存储——只表达「一周里什么时候可能有空」，
+    不含内容文本；可选备注加密（架构 5.3 增补）。
+    """
+
+    __tablename__ = "availability_windows"
+
+    id: Mapped[uuid.UUID] = _pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    weekday: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_minute: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_minute: Mapped[int] = mapped_column(Integer, nullable=False)
+    note_enc: Mapped[str | None] = mapped_column(EncryptedText)
+    created_at: Mapped[datetime] = mapped_column(
+        TZDateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TZDateTime, nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("weekday BETWEEN 0 AND 6", name="availability_windows_weekday_check"),
+        CheckConstraint("start_minute BETWEEN 0 AND 1439", name="availability_windows_start_check"),
+        CheckConstraint("end_minute BETWEEN 1 AND 1440", name="availability_windows_end_check"),
+        CheckConstraint("end_minute > start_minute", name="availability_windows_ordered"),
+    )
+
+
+class TimingProposal(Base):
+    """LLM 时机建议（S03 时机提议分支）。四层边界的第 1–3 层痕迹。
+
+    Scheduler 永不读取本表；confirm 是唯一能把建议变成 wishes 时机字段的通道，
+    且请求体为空、不接受任何客户端时间字段（S03 EX-P.4）。
+    """
+
+    __tablename__ = "timing_proposals"
+
+    id: Mapped[uuid.UUID] = _pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    wish_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("wishes.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    timing_type: Mapped[str] = mapped_column(Text, nullable=False)
+    timing_value: Mapped[str | None] = mapped_column(Text)
+    # 模型给出的参考展示值，仅供用户预览；永不写入 wishes
+    proposed_trigger_at: Mapped[datetime | None] = mapped_column(TZDateTime)
+    reason_enc: Mapped[str | None] = mapped_column(EncryptedText)
+    confidence: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 依据条目的 ID 引用数组（JSON 字符串）；只存 ID 不复制内容，条目删除后引用自然失效
+    evidence: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    validation_result: Mapped[dict] = mapped_column(JSON, nullable=False)
+    decided_at: Mapped[datetime | None] = mapped_column(TZDateTime)
+    expires_at: Mapped[datetime] = mapped_column(TZDateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        TZDateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TZDateTime, nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'confirmed', 'rejected', 'expired')",
+            name="timing_proposals_status_check",
+        ),
+        CheckConstraint(
+            "timing_type IN ('season', 'month_day', 'after_months', 'free_weekend')",
+            name="timing_proposals_timing_type_check",
+        ),
+        CheckConstraint("confidence BETWEEN 0 AND 100", name="timing_proposals_confidence_check"),
+        # 确认/拒绝必须有决策时间，待确认/过期必须没有
+        CheckConstraint(
+            "(status IN ('confirmed', 'rejected')) = (decided_at IS NOT NULL)",
+            name="timing_proposals_decided_state_pairing",
+        ),
+    )
+
+
 __all__ = [
     "AGENT_JOB_KINDS",
     "DEGRADED_REASONS",
@@ -540,7 +678,9 @@ __all__ = [
     "ReminderWeeklyCounter",
     "SchedulerHeartbeat",
     "Session",
+    "TimingProposal",
     "User",
+    "UserPreference",
     "Wish",
     "WishAmendment",
     "WishMessage",

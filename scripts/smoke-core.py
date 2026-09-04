@@ -298,8 +298,10 @@ def smoke_06(ctx: Ctx) -> str | None:
 
 def smoke_07(ctx: Ctx) -> str | None:
     tables, indexes = schema_counts()
-    assert tables == 17, f"表数量是 {tables}，期望 17"
-    assert indexes == 29, f"idx_ 索引数量是 {indexes}，期望 29"
+    # preferences-availability-timing 提案：17 张表 → 20 张（user_preferences /
+    # availability_windows / timing_proposals），idx_ 索引 29 → 36
+    assert tables == 20, f"表数量是 {tables}，期望 20"
+    assert indexes == 36, f"idx_ 索引数量是 {indexes}，期望 36"
     return None
 
 
@@ -628,6 +630,55 @@ def smoke_18(ctx: Ctx) -> str | None:
 ALL = "local", "staging", "production"
 DEPLOYED = "staging", "production"
 
+def smoke_19(ctx: Ctx) -> str | None:
+    """声明一条偏好 → 能读回且来源为 declared；写响应不回显 value 明文（S08 隐私红线）。"""
+    status, _, created = http(
+        "PUT",
+        "/api/v1/me/preferences",
+        token=ctx.token_a,
+        body={"pref_key": "companion", "value": "smoke：更想和朋友一起"},
+    )
+    assert status == 200, f"声明偏好返回 {status}：{created}"
+    assert "value" not in created, f"写响应不得回显 value 明文：{created}"
+
+    status, _, listing = http("GET", "/api/v1/me/preferences", token=ctx.token_a)
+    assert status == 200, f"读取偏好返回 {status}"
+    rows = [i for i in listing["items"] if i["pref_key"] == "companion"]
+    assert len(rows) == 1, f"偏好条目数量 = {len(rows)}"
+    assert rows[0]["source"] == "declared" and rows[0]["confidence"] == 100
+    assert rows[0]["value"] == "smoke：更想和朋友一起", "GET 回显本人明文"
+
+    row = db_rows(
+        f"SELECT value_enc FROM user_preferences WHERE id = '{_lit(rows[0]['id'])}'"
+    )
+    assert row, "user_preferences 缺行"
+    stored = row[0][0] if isinstance(row[0][0], bytes) else str(row[0][0]).encode("utf-8", "ignore")
+    assert "更想和朋友一起".encode() not in stored, "value_enc 必须是密文"
+    return None
+
+
+def smoke_20(ctx: Ctx) -> str | None:
+    """保存一条可用时段 → 能读回；清理无残留（并入 smoke 数据自清理）。"""
+    status, _, created = http(
+        "POST",
+        "/api/v1/me/availability",
+        token=ctx.token_a,
+        body={"weekday": 5, "start_minute": 540, "end_minute": 720},
+    )
+    assert status == 201, f"保存可用时段返回 {status}：{created}"
+    window_id = created["id"]
+
+    status, _, listing = http("GET", "/api/v1/me/availability", token=ctx.token_a)
+    assert status == 200
+    assert any(w["id"] == window_id and w["weekday"] == 5 for w in listing["items"]), listing
+
+    status, _, _ = http("DELETE", f"/api/v1/me/availability/{window_id}", token=ctx.token_a)
+    assert status == 204, f"删除返回 {status}"
+    status, _, _ = http("DELETE", f"/api/v1/me/availability/{window_id}", token=ctx.token_a)
+    assert status == 404, f"重复删除应 404，得到 {status}"
+    return None
+
+
 CASES = (
     Case("SMOKE-core-01", ALL, "健康检查接口可访问且数据库连通", smoke_01),
     Case("SMOKE-core-02", DEPLOYED, "调度进程存活", smoke_02),
@@ -647,6 +698,8 @@ CASES = (
     Case("SMOKE-core-16", DEPLOYED, "静态站点与 PWA 资源可取", smoke_16),
     Case("SMOKE-core-17", DEPLOYED, "HTTPS 与证书有效", smoke_17),
     Case("SMOKE-core-18", DEPLOYED, "加密落地、日志无明文、smoke 数据已清理", smoke_18),
+    Case("SMOKE-core-19", ALL, "偏好声明与读取（含不回显与加密断言）", smoke_19),
+    Case("SMOKE-core-20", ALL, "可用时段保存与读取", smoke_20),
 )
 
 

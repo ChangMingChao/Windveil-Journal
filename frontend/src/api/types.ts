@@ -26,10 +26,32 @@ export interface WishCard {
   version: number;
 }
 
+export interface ProposalEvidence {
+  kind: "preference" | "availability" | "timeline";
+  id: string;
+}
+
+export interface TimingProposal {
+  id: string;
+  wish_id: string;
+  status: "pending" | "confirmed" | "rejected" | "expired";
+  timing_type: "season" | "month_day" | "after_months" | "free_weekend";
+  timing_value: string | null;
+  proposed_trigger_at: string | null;
+  reason: string | null;
+  confidence: number;
+  evidence: ProposalEvidence[];
+  validation: { valid: boolean; reason_code: string | null };
+  created_at: string;
+  expires_at: string;
+  decided_at: string | null;
+}
+
 export interface WishDetail extends WishCard {
   original_text: string | null;
   understanding: Record<string, unknown> | null;
   pending_question: boolean;
+  timing_proposal?: TimingProposal | null;
   amended_from: string | null;
   current_step: Record<string, unknown> | null;
   timeline: { id: string; text: string; completed_at: string }[];
@@ -74,4 +96,33 @@ export interface ApiError {
   code: string;
   message: string;
   details?: Record<string, unknown>;
+}
+
+// ---------- auth.yaml（preferences tag，S08）----------
+
+export interface PreferenceItem {
+  id: string;
+  kind: "entry" | "digest";
+  pref_key: string;
+  source: "declared" | "inferred";
+  confidence: number;
+  value: string;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export interface PreferenceListResponse {
+  items: PreferenceItem[];
+  digest: PreferenceItem | null;
+}
+
+export interface AvailabilityWindow {
+  id: string;
+  weekday: number;
+  start_minute: number;
+  end_minute: number;
+  note: string | null;
+  created_at: string;
+  updated_at?: string | null;
 }

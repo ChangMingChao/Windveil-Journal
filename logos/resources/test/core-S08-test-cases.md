@@ -19,7 +19,7 @@
 |----|------|------|---------|------|---------|
 | UT-S08-09 | declared 行置信度必须为 100 | `user_preferences_declared_is_certain CHECK` | — | `source='declared', confidence=60` | 违反 CHECK |
 | UT-S08-10 | digest 行不可撤回 | `user_preferences_digest_never_revoked CHECK` | — | `kind='digest', revoked_at=now()` | 违反 CHECK |
-| UT-S08-11 | 同 owner 同 kind+key 唯一 | `idx_user_preferences_unique_key` | 已有 declared 行 | 同 key 再插一行 | 唯一冲突 → UPSERT 更新 |
+| UT-S08-11 | 同 owner 同 kind+key+source 唯一（不同 source 并存即「声明不覆盖推断」） | `idx_user_preferences_unique_key` | 已有 declared 行 | 同 key 同 source 再插一行 | 唯一冲突 → UPSERT 更新；inferred 行并存成功 |
 | UT-S08-12 | 三张新表均在 owner_guard 保护清单 | schema.sql 守卫清单、S08 EX-19.1 | 用户 B 的 token | 读写用户 A 的偏好/时段/提议 | 全部 404；不暴露存在性 |
 | UT-S08-13 | 偏好值与备注加密落库 | schema.sql `value_enc` / `note_enc` | 已声明偏好与时段 | 直查 `user_preferences.value_enc` / `availability_windows.note_enc` | BLOB 且不含明文子串 |
 | UT-S08-14 | 时段跨午夜拆两行 | S08 Step 23 说明 | 已登录 | 22:30–次日 06:30 | 前端提交两行（`22:30–24:00` 与 `00:00–06:30`），均 201 |

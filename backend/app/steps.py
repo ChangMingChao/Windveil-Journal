@@ -216,7 +216,27 @@ async def detail_of(session: AsyncSession, wish: Wish) -> WishDetail:
     # sessionmaker 关掉了 autoflush，所以同一事务内刚写入的步骤 / 修订快照
     # 不会自动出现在后面的 SELECT 里——装配前显式 flush 一次。
     await session.flush()
+    from app.proposals import pending_proposal_of
+    from app.schemas import TimingProposalOut
+
     detail = to_detail(wish, await photo_ids_of(session, wish.id))
+    pending = await pending_proposal_of(session, wish.id)
+    if pending is not None:
+        detail.timing_proposal = TimingProposalOut(
+            id=pending.id,
+            wish_id=pending.wish_id,
+            status=pending.status,
+            timing_type=pending.timing_type,
+            timing_value=pending.timing_value,
+            proposed_trigger_at=pending.proposed_trigger_at,
+            reason=pending.reason_enc,
+            confidence=pending.confidence,
+            evidence=pending.evidence or [],
+            validation=pending.validation_result or {"valid": True, "reason_code": None},
+            created_at=pending.created_at,
+            expires_at=pending.expires_at,
+            decided_at=pending.decided_at,
+        )
     current = await session.scalar(
         select(WishStep).where(
             WishStep.owner_id == wish.owner_id,

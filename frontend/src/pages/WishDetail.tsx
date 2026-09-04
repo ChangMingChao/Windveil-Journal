@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { WishDetail } from "../api/types";
 import { canRecall, RECALL_COPY } from "../lib/recall";
+import { PROPOSAL_COPY, proposalLabel, tierOf } from "../lib/remembered";
+import type { TimingProposal } from "../api/types";
 
 /** 整理半屏的 5 个动作，按侵入性递增排列（S05.2 Step 15）。 */
 const TIDY_ACTIONS = [
@@ -65,6 +67,34 @@ export default function WishDetailPage() {
     },
   });
 
+  // S03 时机提议分支（S08）：模型只提议，确认前不产生任何提醒
+  const [adviceDegraded, setAdviceDegraded] = useState(false);
+
+  const propose = useMutation({
+    mutationFn: async () =>
+      api<{ proposal: TimingProposal | null; degraded: boolean }>(
+        `/wishes/${wishId}/timing-proposals`,
+        { method: "POST" },
+      ),
+    onSuccess: (result) => {
+      setAdviceDegraded(result.degraded || result.proposal === null);
+      void client.invalidateQueries({ queryKey: ["wish", wishId] });
+    },
+    onError: () => setAdviceDegraded(true),
+  });
+
+  const confirmProposal = useMutation({
+    mutationFn: async (proposalId: string) =>
+      api<unknown>(`/wishes/${wishId}/timing-proposals/${proposalId}/confirm`, { method: "POST" }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ["wish", wishId] }),
+  });
+
+  const rejectProposal = useMutation({
+    mutationFn: async (proposalId: string) =>
+      api<unknown>(`/wishes/${wishId}/timing-proposals/${proposalId}/reject`, { method: "POST" }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ["wish", wishId] }),
+  });
+
   const happened = useMutation({
     mutationFn: async (happened_from: string) =>
       api<{ memory: { id: string } }>(`/wishes/${wishId}/happened`, {
@@ -84,6 +114,60 @@ export default function WishDetailPage() {
     <main>
       <h1 className="text-[28px]">{wish.title}</h1>
       <p className="mt-2 text-[13px] text-ink-soft">{wish.timing.label}</p>
+
+      {wish.state === "seeded" && !wish.timing_proposal && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => propose.mutate()}
+            disabled={propose.isPending}
+            className="min-h-[44px] text-[14px] text-clay underline underline-offset-4 disabled:opacity-50"
+          >
+            {propose.isPending ? PROPOSAL_COPY.thinking : PROPOSAL_COPY.entry}
+          </button>
+          {adviceDegraded && (
+            <p className="mt-2 text-[13px] text-ink-soft">{PROPOSAL_COPY.degraded}</p>
+          )}
+        </div>
+      )}
+
+      {wish.timing_proposal?.status === "pending" && (
+        <section className="mt-6 rounded-card border border-line bg-card p-4 shadow-lamp">
+          <h2 className="text-[18px]">
+            它想了个时候：{proposalLabel(wish.timing_proposal.timing_type, wish.timing_proposal.timing_value)}
+          </h2>
+          {wish.timing_proposal.reason && (
+            <p className="mt-2 text-[14px] text-ink-soft">
+              {PROPOSAL_COPY.because}
+              {wish.timing_proposal.reason}
+            </p>
+          )}
+          <p className="mt-2 text-[13px] text-ink-soft">
+            <span className="rounded-full border border-line px-2 py-0.5">
+              {tierOf(wish.timing_proposal.confidence)}
+            </span>
+          </p>
+          <p className="mt-2 text-[12px] text-ink-soft">定下来之前，它不会提醒你，也不会改变这张卡片的状态。</p>
+          <div className="mt-3 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => confirmProposal.mutate(wish.timing_proposal!.id)}
+              disabled={confirmProposal.isPending}
+              className="min-h-[44px] rounded-[999px] bg-clay px-5 text-paper disabled:opacity-50"
+            >
+              {PROPOSAL_COPY.confirm}
+            </button>
+            <button
+              type="button"
+              onClick={() => rejectProposal.mutate(wish.timing_proposal!.id)}
+              disabled={rejectProposal.isPending}
+              className="min-h-[44px] rounded-[999px] border border-line px-5 text-clay disabled:opacity-50"
+            >
+              {PROPOSAL_COPY.reject}
+            </button>
+          </div>
+        </section>
+      )}
       {wish.let_go_at && (
         <p className="mt-1 text-[13px] text-ink-soft">安静放下于 {new Date(wish.let_go_at).toLocaleDateString("zh-CN")}</p>
       )}

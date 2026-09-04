@@ -92,6 +92,7 @@ MIGRATIONS = (
     "0005_batch6_memories.py",
     "0006_batch7_scheduler_heartbeat.py",
     "0007_s07_recall.py",
+    "0008_preferences_availability_timing.py",
 )
 
 

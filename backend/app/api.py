@@ -22,6 +22,18 @@ from app.config import get_settings
 from app.db import session_scope
 from app.schemas import (
     AnonymousRequest,
+    AvailabilityCreateRequest,
+    AvailabilityListResponse,
+    AvailabilityOut,
+    AvailabilityUpdateRequest,
+    DeclarePreferenceRequest,
+    PreferenceListResponse,
+    PreferenceMeta,
+    ProposalConfirmResult,
+    ProposalGenerateResult,
+    ProposalListResponse,
+    ProposalRejectResult,
+    TimingProposalOut,
     AnswerRequest,
     AuthResult,
     HappenedRequest,
@@ -702,6 +714,198 @@ async def post_publish(memory_id: UUID, user_id: CurrentUser) -> PublishResult:
             return PublishResult(memory=await to_memory_out(session, memory))
     except DomainError as exc:
         raise _err(exc) from exc
+
+
+# ------------------------------------------------------------------ preferences（S08）
+
+
+@router.get("/me/preferences", response_model=PreferenceListResponse)
+async def get_preferences(
+    user_id: CurrentUser, include_revoked: Annotated[bool, Query()] = False
+) -> PreferenceListResponse:
+    """来源：S08 Step 2 → Step 6。默认不含已撤回行；摘要随列表返回。"""
+    from app.preferences import list_preferences
+
+    data = await list_preferences(user_id, include_revoked=include_revoked)
+    return PreferenceListResponse(**data)
+
+
+@router.put("/me/preferences", response_model=PreferenceMeta)
+async def put_preference(user_id: CurrentUser, payload: DeclarePreferenceRequest) -> PreferenceMeta:
+    """来源：S08 Step 7 → Step 11。响应只含元数据，不回显 value 明文（UT-S08-04）。"""
+    from app.preferences import declare_preference
+
+    try:
+        meta = await declare_preference(user_id, payload.pref_key, payload.value)
+    except DomainError as exc:
+        raise _err(exc) from exc
+    return PreferenceMeta(**meta)
+
+
+@router.post("/me/preferences/{pref_id}/revoke", response_model=dict)
+async def post_preference_revoke(user_id: CurrentUser, pref_id: UUID) -> dict:
+    """来源：S08 Step 12 → Step 16。仅 inferred 且未撤回可撤回（EX-14.1）。"""
+    from app.preferences import revoke_preference
+
+    try:
+        item = await revoke_preference(user_id, pref_id)
+    except DomainError as exc:
+        raise _err(exc) from exc
+    return item
+
+
+@router.delete("/me/preferences/{pref_id}", status_code=204)
+async def delete_preference(user_id: CurrentUser, pref_id: UUID) -> Response:
+    """来源：S08 Step 17 → Step 20。硬删除；同事务失效引用它的 pending 建议（EX-19.1）。"""
+    from app.preferences import delete_preference
+
+    try:
+        await delete_preference(user_id, pref_id)
+    except DomainError as exc:
+        raise _err(exc) from exc
+    return Response(status_code=204)
+
+
+@router.get("/me/availability", response_model=AvailabilityListResponse)
+async def get_availability(user_id: CurrentUser) -> AvailabilityListResponse:
+    """来源：S08 Step 2 → Step 6。free_weekend 类时机计算以本表为依据。"""
+    from app.preferences import list_availability
+
+    data = await list_availability(user_id)
+    return AvailabilityListResponse(items=[AvailabilityOut(**i) for i in data["items"]])
+
+
+@router.post("/me/availability", status_code=201, response_model=AvailabilityOut)
+async def post_availability(user_id: CurrentUser, payload: AvailabilityCreateRequest) -> AvailabilityOut:
+    """来源：S08 Step 21 → Step 25。响应不回显 note 明文。"""
+    from app.preferences import create_availability
+
+    try:
+        item = await create_availability(
+            user_id, payload.weekday, payload.start_minute, payload.end_minute, payload.note
+        )
+    except DomainError as exc:
+        raise _err(exc) from exc
+    return AvailabilityOut(**item)
+
+
+@router.patch("/me/availability/{window_id}", response_model=AvailabilityOut)
+async def patch_availability(
+    user_id: CurrentUser, window_id: UUID, payload: AvailabilityUpdateRequest
+) -> AvailabilityOut:
+    """来源：S08 设计文档「可用时段」区的编辑动作。校验规则与 POST 相同。"""
+    from app.preferences import update_availability
+
+    changes = payload.model_dump(exclude_unset=True)
+    try:
+        item = await update_availability(user_id, window_id, changes)
+    except DomainError as exc:
+        raise _err(exc) from exc
+    return AvailabilityOut(**item)
+
+
+@router.delete("/me/availability/{window_id}", status_code=204)
+async def delete_availability(user_id: CurrentUser, window_id: UUID) -> Response:
+    """来源：S08 Step 17 → Step 20。硬删除；同事务失效引用它的 pending 建议。"""
+    from app.preferences import delete_availability
+
+    try:
+        await delete_availability(user_id, window_id)
+    except DomainError as exc:
+        raise _err(exc) from exc
+    return Response(status_code=204)
+
+
+# ------------------------------------------------------------------ timing proposals（S08 增补）
+
+
+@router.post("/wishes/{wish_id}/timing-proposals", status_code=200)
+async def post_timing_proposal(wish_id: UUID, user_id: CurrentUser) -> dict:
+    """来源：S03 时机提议分支 P1 → P11。LLM 只产出草稿；degraded=true 表示不可用（EX-P.1）。"""
+    from app.db import session_scope
+    from app.proposals import create_proposal
+
+    try:
+        async with session_scope(user_id) as session:
+            proposal = await create_proposal(session, user_id, wish_id)
+    except DomainError as exc:
+        raise _err(exc) from exc
+    if proposal is None:
+        return {"proposal": None, "degraded": True}
+    return {"proposal": TimingProposalOut(**proposal), "degraded": False}
+
+
+@router.get("/wishes/{wish_id}/timing-proposals", response_model=ProposalListResponse)
+async def get_timing_proposals(wish_id: UUID, user_id: CurrentUser) -> ProposalListResponse:
+    """来源：S03 分支 P10 与四层边界第 2 层的审计要求。含全部决策与过期记录。"""
+    from app.db import session_scope
+    from app.proposals import list_proposals
+
+    try:
+        async with session_scope(user_id) as session:
+            items = await list_proposals(session, user_id, wish_id)
+    except DomainError as exc:
+        raise _err(exc) from exc
+    return ProposalListResponse(items=[TimingProposalOut(**i) for i in items])
+
+
+@router.post("/wishes/{wish_id}/timing-proposals/{proposal_id}/confirm", response_model=ProposalConfirmResult)
+async def post_proposal_confirm(
+    wish_id: UUID, proposal_id: UUID, user_id: CurrentUser, payload: dict | None = None
+) -> ProposalConfirmResult:
+    """来源：S03 分支 P12 → P15。body 必须为空——只接受已校验的提议（EX-P.4）。"""
+    from app.db import session_scope
+    from app.proposals import confirm_proposal
+    from app.steps import detail_of
+
+    if payload:
+        raise HTTPException(
+            422, detail={"code": "PROPOSAL_CONFIRM_BODY_FORBIDDEN", "message": "确认就好，不用再填时间"}
+        )
+    try:
+        async with session_scope(user_id) as session:
+            wish, proposal = await confirm_proposal(session, user_id, wish_id, proposal_id)
+            detail = await detail_of(session, wish)
+    except DomainError as exc:
+        raise _err(exc) from exc
+    return ProposalConfirmResult(
+        wish=detail, proposal=TimingProposalOut(**_proposal_out_of(proposal))
+    )
+
+
+@router.post("/wishes/{wish_id}/timing-proposals/{proposal_id}/reject", response_model=ProposalRejectResult)
+async def post_proposal_reject(
+    wish_id: UUID, proposal_id: UUID, user_id: CurrentUser
+) -> ProposalRejectResult:
+    """来源：S03 分支 P16 / EX-P.3。不写 wishes 任何字段。"""
+    from app.db import session_scope
+    from app.proposals import reject_proposal
+
+    try:
+        async with session_scope(user_id) as session:
+            proposal = await reject_proposal(session, user_id, wish_id, proposal_id)
+    except DomainError as exc:
+        raise _err(exc) from exc
+    return ProposalRejectResult(proposal=TimingProposalOut(**_proposal_out_of(proposal)))
+
+
+def _proposal_out_of(row) -> dict:
+    """TimingProposal ORM 行 → TimingProposalOut dict（reason 解密由 EncryptedText 完成）。"""
+    return {
+        "id": row.id,
+        "wish_id": row.wish_id,
+        "status": row.status,
+        "timing_type": row.timing_type,
+        "timing_value": row.timing_value,
+        "proposed_trigger_at": row.proposed_trigger_at,
+        "reason": row.reason_enc,
+        "confidence": row.confidence,
+        "evidence": row.evidence or [],
+        "validation": row.validation_result or {"valid": True, "reason_code": None},
+        "created_at": row.created_at,
+        "expires_at": row.expires_at,
+        "decided_at": row.decided_at,
+    }
 
 
 # ------------------------------------------------------------------ 测试后门

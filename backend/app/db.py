@@ -43,6 +43,9 @@ OWNED_TABLES = frozenset(
         "reminder_outbox",
         "reminder_weekly_counters",
         "pending_agent_jobs",
+        "user_preferences",
+        "availability_windows",
+        "timing_proposals",
     }
 )
 
