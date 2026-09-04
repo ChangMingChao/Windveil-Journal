@@ -411,6 +411,38 @@ async def test_ST_S03_17_reject_writes_nothing(env) -> None:
     assert r.json()["items"] == []
 
 
+async def test_ST_S03_18_delete_availability_expires_pending_proposal(env) -> None:
+    """依据被删除 → 建议立即失效，确认被拒（EX-P.5，编排同名 flow）。"""
+    client, llm = env
+    h, uid = await _signup(client)
+    wid = await _seeded(client, h, "想去看海")
+    llm.draft = {
+        "timing_type": "free_weekend",
+        "timing_value": None,
+        "reason": "你说过周五上午通常有空",
+        "confidence": 85,
+    }
+    r = await client.post(
+        f"{BASE}/me/availability",
+        headers=h,
+        json={"weekday": 5, "start_minute": 540, "end_minute": 720},
+    )
+    assert r.status_code == 201
+    window_id = r.json()["id"]
+    r = await client.post(f"{BASE}/wishes/{wid}/timing-proposals", headers=h)
+    assert r.status_code == 200, r.text
+    proposal_id = r.json()["proposal"]["id"]
+    # 删除依据时段（S08 Step 18）
+    r = await client.delete(f"{BASE}/me/availability/{window_id}", headers=h)
+    assert r.status_code == 204
+    # EX-P.5：确认被拒
+    r = await client.post(f"{BASE}/wishes/{wid}/timing-proposals/{proposal_id}/confirm", headers=h)
+    assert r.status_code == 409 and r.json()["code"] == "PROPOSAL_EXPIRED"
+    # 提议状态已过期
+    r = await client.get(f"{BASE}/wishes/{wid}/timing-proposals", headers=h)
+    assert next(i for i in r.json()["items"] if i["id"] == proposal_id)["status"] == "expired"
+
+
 async def test_ST_S03_19_llm_degraded_no_side_effect(env) -> None:
     """LLM 降级：无落库、无错误码、零变化（EX-P.1）。"""
     client, llm = env
