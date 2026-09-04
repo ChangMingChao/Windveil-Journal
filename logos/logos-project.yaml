@@ -123,8 +123,11 @@ scenarios:
   - id: S07
     name: 唤回一个被安静放下的愿望
     feature: F03
+  - id: S08
+    name: 管理偏好与可用时段
+    feature: F02
 scenario_counter:
-  next_id: 8
+  next_id: 9
 modules:
   - id: core
     name: 核心功能
@@ -141,7 +144,7 @@ deployment_gates:
     notes: production 需人类明确授权后执行并复跑 smoke；smoke 失败必须回滚，不允许先上线再修
 resource_index:
   - path: logos/resources/prd/1-product-requirements/core-01-requirements.md
-    desc: 未发生事件管理局需求文档。涉及产品定位、产品人格与设计原则、目标用户、6 条用户痛点（P01-P06）、7 个核心场景（S01-S07）及其 GIVEN/WHEN/THEN 验收条件、技术约束与「不做」清单时必读。
+    desc: 未发生事件管理局需求文档。涉及产品定位、产品人格与设计原则、目标用户、6 条用户痛点（P01-P06）、8 个核心场景（S01-S08）及其 GIVEN/WHEN/THEN 验收条件、技术约束与「不做」清单时必读。
   - path: logos/resources/prd/2-product-design/1-feature-specs/core-00-information-architecture.md
     desc: 信息架构与全局交互规格。涉及产品类型判断、页面结构与路由、底部导航、愿望卡全局状态机、提醒周预算、文案词典、Agent 全局行为规范、可访问性基线时必读。
   - path: logos/resources/prd/2-product-design/1-feature-specs/core-01-seeding-design.md
@@ -216,6 +219,14 @@ resource_index:
     desc: S05 API 编排测试（12 个 flow）。涉及列表无统计字段断言、游标分页无重叠、放下清空提醒、彻底删除全链路与对象消失、跨账号越权一律 404、确认参数与幂等删除时必读。
   - path: logos/resources/scenario/core-S06-memory-page.json
     desc: S06 API 编排测试（13 个 flow）。涉及标记已发生即停提醒但状态仍 going、草稿编辑与幂等发布、早于种下日期的 warning 两段式、未来日期硬拦、补草拟不覆盖 edited_fields、照片超限整体不保存时必读。
+  - path: logos/resources/prd/2-product-design/1-feature-specs/core-05-preferences-availability-design.md
+    desc: S08 管理偏好与可用时段产品设计。涉及 P6「它记得我什么」管理区、来源徽标与置信档、撤回痕迹与硬删除、可用时段周视图、时机建议确认卡（P3 侧见 core-02 增补）时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S08-preferences-availability.md
+    desc: S08 管理偏好与可用时段场景时序图。涉及偏好声明/撤回/删除、可用时段管理、摘要支线 D1–D4、关闭编排索引 OQ-3 的偏好部分时必读。
+  - path: logos/resources/test/core-S08-test-cases.md
+    desc: S08 管理偏好与可用时段测试用例（UT-S08-01~20 / ST-S08-01~08，含 2 个 [manual]）。涉及声明不覆盖推断、撤回/删除语义与联动失效、digest UPSERT 与降级保持、加密落库与守卫隔离时必读。
+  - path: logos/resources/scenario/core-S08-preferences-availability.json
+    desc: S08 API 编排测试（4 个 flow）。涉及查看/声明/删除偏好、时段管理与非法输入、摘要支线走调度轮；ST-S08-02/03 依赖 inferred fixture 留 code-level，已在 not_orchestrated 说明时必读。
   - path: logos/resources/implementation/implementation-manifest.md
     desc: 实现清单。涉及六维打分结果与 7 个批次的分批策略、Batch 1 已交付的业务代码与测试代码文件职责映射、覆盖用例 ID、运行结果与 skip 语义说明、sourceRoots 与 verify.pre_run_command 配置变更、Step 5 自检结论时必读。
 conventions:
