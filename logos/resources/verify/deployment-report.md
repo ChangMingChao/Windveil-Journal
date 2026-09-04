@@ -135,3 +135,33 @@ BLOB 往返时炸在一个莫名的汉字上（已固定 UTF-8）。
 | `.env` 落在工作区 | 本次演练用的 `.env` 含本机生成的 `ENCRYPTION_KEY` | 已 `chmod 600` 并加入 `.gitignore`。**这些密钥只用于本机演练，不要复用到任何真实环境** |
 | Docker Hub 拉取不稳定 | 构建期 `auth.docker.io` 的 DNS 被解析到无关地址，多次失败 | 已把基础镜像拉到本地并用 `--pull=false` 构建；CI 环境需要镜像缓存或私有仓库 |
 
+
+
+## preferences-availability-timing 增量部署演练（2026-09-04）
+
+> 目标环境：本机 `staging`（与 Phase 3-7 相同形态）｜镜像 `unhappened-api:eaaa893`｜授权：用户选择「本地部署演练」
+
+### 执行摘要
+
+| 步骤 | 结果 |
+|------|------|
+| 迁移前备份 | ✅ `ops/backup-db.sh` 真实执行（库非空，WAL checkpoint + 文件复制） |
+| 迁移 0007 → 0008 | ✅ 三张新表 + 7 索引；部署后核对 20 张表 / 36 索引（SMOKE-core-06/07） |
+| api / web / caddy / scheduler / minio | ✅ 全部 `unhappened-api:eaaa893`（web 为 nginx:1.27-alpine）就位，api healthy |
+| 部署后检查 + smoke | ✅ 19 pass / 1 skip（SMOKE-core-17 内部 CA，预期）/ 0 fail；**SMOKE-core-19/20 首次真实执行通过** |
+
+### 过程中发现并修正的问题（四处）
+
+1. **迁移 0008 的 `op.exec_driver_sql` 不存在**——改为与 0005 相同的逐条 `op.execute`。
+2. **DDL 注释里的 JSON 示例（`{"valid":true,...}`）在 `text()` 参数解析下炸出绑定参数错误**——`upgrade()` 改为 `bind.exec_driver_sql()` 逐条下发，跳过参数解析。第一次在线迁移因此半建（user_preferences / availability_windows 已建、timing_proposals 未建），已清理半建对象后干净重跑（三张空表无数据依赖，备份在手）。
+3. **0007 迁移的离线模式缺陷（既有问题）**：deploy.sh 第 0 步 `alembic upgrade head --sql` 在 0007 的 `exec_driver_sql("PRAGMA ...")` 上失败，被 `|| true` 吞掉——不阻塞部署，但「迁移 SQL 人工过目」这一道防线实际从未生效，后续提案应修复 0007 的离线分支。
+4. **smoke runner 的三处执行缺陷（既有问题，本次首次在 compose 路径暴露）**：
+   - smoke_12 的 `docker compose run` 缺 `--no-deps`，会以「配置漂移」为由重建 api 依赖，令后续用例撞 502 窗口；
+   - 镜像 ENTRYPOINT（entrypoint.sh）吞掉 `--once` 参数——默认 compose 路径此前从未真正通过，改为 `--entrypoint python scheduler -m app.scheduler --once`；
+   - 本机演练需显式 `SMOKE_DB_CMD="bash ops/sql.sh"`（数据库在命名卷内）与 `IMAGE_TAG`（缺失时 compose run 会重建依赖）。
+
+### 环境事实
+
+- `ops/local-ca.crt` 已从当前 Caddy 数据卷重新导出（CA 与卷绑定，卷重建即变）；
+- `SMOKE-core-10` 走降级路径 PASS 并带 warning（本机无真实 LLM 端点，.env 补了占位值）；
+- `SMOKE-core-18` 日志明文抽查以 warning 记录（未提供 SMOKE_LOG_CMD）。

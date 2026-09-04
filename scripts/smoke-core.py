@@ -15,7 +15,7 @@
   SMOKE_BASE_URL        API 根，默认 http://127.0.0.1:8000
   SMOKE_WEB_URL         静态站点根，默认同 SMOKE_BASE_URL
   SMOKE_DB_PATH         SQLite 文件路径，默认从 DATABASE_URL 推导
-  SMOKE_SCHEDULER_CMD   触发一轮扫描的命令，默认 docker compose run --rm scheduler --once
+  SMOKE_SCHEDULER_CMD   触发一轮扫描的命令，默认 docker compose run --rm --no-deps --entrypoint python scheduler -m app.scheduler --once
   SMOKE_ALEMBIC_HEAD    期望的迁移 revision，默认取 backend/migrations 里最大的
   OPENLOGOS_SMOKE_RESULT_PATH  结果文件，默认 logos/resources/verify/smoke-results.jsonl
 """
@@ -42,7 +42,7 @@ ENV = os.environ.get("SMOKE_ENV", "local")
 BASE_URL = os.environ.get("SMOKE_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 WEB_URL = os.environ.get("SMOKE_WEB_URL", BASE_URL).rstrip("/")
 SCHEDULER_CMD = os.environ.get(
-    "SMOKE_SCHEDULER_CMD", "docker compose run --rm scheduler --once"
+    "SMOKE_SCHEDULER_CMD", "docker compose run --rm --no-deps --entrypoint python scheduler -m app.scheduler --once"
 )
 RESULT_PATH = Path(
     os.environ.get(
