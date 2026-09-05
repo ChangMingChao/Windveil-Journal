@@ -127,6 +127,17 @@ export interface AvailabilityWindow {
   updated_at?: string | null;
 }
 
+export interface MeProfile {
+  id: string;
+  email: string | null;
+  is_anonymous: boolean;
+  onboarded_at: string | null;
+  timezone: string;
+  push_enabled: boolean;
+  email_enabled: boolean;
+  created_at: string;
+}
+
 export interface LiteEvent {
   id: string;
   text: string;

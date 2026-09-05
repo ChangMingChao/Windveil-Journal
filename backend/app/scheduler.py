@@ -125,16 +125,30 @@ async def _enqueue(
 
 
 async def _deliver_one(session: AsyncSession, row: ReminderOutbox, result: TickResult) -> None:
-    """Step 15 → Step 17：push 优先、邮件兜底，一次时机只送 1 条。"""
+    """Step 15 → Step 17：push 优先、邮件兜底，一次时机只送 1 条。
+
+    S10 D2 增补：投递前读取用户的最新通道开关——
+      push 关 + email 开 → 直接走邮件（不对已关闭通道做无谓调用）；
+      全关 → 跳过该记录：不投递、不计失败、不改退避、不累加统计，
+      pending 保持，用户重开任一通道后下一轮自然恢复（EX-D2.1）。
+    """
     s = get_settings()
+    user_row = await session.get(User, row.owner_id)
+    push_on = user_row is not None and user_row.push_enabled
+    email_on = user_row is not None and user_row.email_enabled
+    if not push_on and not email_on:
+        result.skipped_channels = getattr(result, "skipped_channels", 0) + 1
+        return
     body = row.body_enc
-    sub = await session.scalar(
-        select(PushSubscription).where(PushSubscription.owner_id == row.owner_id).limit(1)
-    )
+    sub = None
+    if push_on:
+        sub = await session.scalar(
+            select(PushSubscription).where(PushSubscription.owner_id == row.owner_id).limit(1)
+        )
     channel: str | None = None
     error: str | None = None
 
-    if sub is not None:
+    if push_on and sub is not None:
         try:
             await get_push_sender().send(
                 endpoint=sub.endpoint, p256dh=sub.p256dh, auth=sub.auth_secret, body=body
@@ -145,11 +159,10 @@ async def _deliver_one(session: AsyncSession, row: ReminderOutbox, result: TickR
             await session.delete(sub)
 
     if channel is None:
-        user = await session.get(User, row.owner_id)
-        if user is not None and user.email and user.email_enabled:
+        if user_row is not None and user_row.email and email_on:
             try:
                 await get_email_sender().send(
-                    to=user.email, subject="你说过的那件事", body=body
+                    to=user_row.email, subject="你说过的那件事", body=body
                 )
                 channel = "email"
             except Exception as exc:  # noqa: BLE001

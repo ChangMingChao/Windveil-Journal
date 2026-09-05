@@ -1,3 +1,20 @@
+import { useState } from "react";
+
+function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={() => onChange(!on)}
+      className={`min-h-[44px] min-w-[44px] rounded-full border px-4 text-[13px] ${
+        on ? "border-sprout bg-white text-sprout-deep" : "border-line bg-transparent text-ink-soft"
+      }`}
+    >
+      {on ? "开" : "关"}
+    </button>
+  );
+}
 /** P6「我的」— S08「它记得我什么」区：偏好与可用时段的管理界面。
 
 规格来源：core-05-preferences-availability-design.md。三条铁律：
@@ -6,10 +23,9 @@
   3. 撤回（软失效，留痕迹）与删除（硬删，无影子）是两个动作；无任何条数统计。
  */
 
-import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { AvailabilityWindow, PreferenceItem } from "../api/types";
+import type { AvailabilityWindow, MeProfile, PreferenceItem } from "../api/types";
 import {
   REMEMBERED_COPY,
   minuteLabel,
@@ -44,6 +60,20 @@ export default function Me() {
       api<{ items: PreferenceItem[]; digest: PreferenceItem | null }>(
         `/me/preferences${showRevoked ? "?include_revoked=true" : ""}`,
       ),
+  });
+
+  const channelsQ = useQuery({
+    queryKey: ["channels"],
+    queryFn: () => api<MeProfile>("/me"),
+  });
+
+  const saveChannels = useMutation({
+    mutationFn: async (changes: { push_enabled?: boolean; email_enabled?: boolean }) =>
+      api<{ push_enabled: boolean; email_enabled: boolean }>("/me/notification-channels", {
+        method: "PATCH",
+        json: changes,
+      }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ["channels"] }),
   });
 
   const availability = useQuery({
@@ -90,6 +120,10 @@ export default function Me() {
   const entries = items.filter((i) => i.kind === "entry" && i.revoked_at === null);
   const revoked = items.filter((i) => i.kind === "entry" && i.revoked_at !== null);
   const windows = availability.data?.items ?? [];
+  const channels = {
+    push_enabled: channelsQ.data?.push_enabled ?? true,
+    email_enabled: channelsQ.data?.email_enabled ?? true,
+  };
   const invalidRange = end <= start;
 
   return (
@@ -195,6 +229,32 @@ export default function Me() {
         >
           {REMEMBERED_COPY.record}
         </button>
+      </section>
+
+      <hr className="my-8 border-dashed border-line" />
+
+      <section>
+        <h2 className="text-[20px]">提醒通道</h2>
+        <p className="mt-1 text-[13px] text-ink-soft">安静是你的选择，随时可以打开。</p>
+        <div className="mt-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between rounded-card border border-line bg-card px-4 py-3">
+            <span className="text-[14px]">浏览器推送</span>
+            <Toggle
+              on={channels.push_enabled}
+              onChange={(v) => saveChannels.mutate({ push_enabled: v })}
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-card border border-line bg-card px-4 py-3">
+            <span className="text-[14px]">邮件兜底（iOS 建议保持开启）</span>
+            <Toggle
+              on={channels.email_enabled}
+              onChange={(v) => saveChannels.mutate({ email_enabled: v })}
+            />
+          </div>
+          {!channels.push_enabled && !channels.email_enabled && (
+            <p className="text-[13px] text-ink-soft">先安静一段时间，想听的时候随时打开。</p>
+          )}
+        </div>
       </section>
 
       <hr className="my-8 border-dashed border-line" />

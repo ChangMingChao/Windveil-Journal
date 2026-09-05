@@ -22,6 +22,8 @@ from app.config import get_settings
 from app.db import session_scope
 from app.schemas import (
     AnonymousRequest,
+    NotificationChannels,
+    NotificationChannelsUpdate,
     AvailabilityCreateRequest,
     AvailabilityListResponse,
     AvailabilityOut,
@@ -909,6 +911,32 @@ def _proposal_out_of(row) -> dict:
         "expires_at": row.expires_at,
         "decided_at": row.decided_at,
     }
+
+
+# ------------------------------------------------------------------ notification channels（S10）
+
+
+@router.patch("/me/notification-channels", response_model=NotificationChannels)
+async def patch_notification_channels(
+    user_id: CurrentUser, payload: NotificationChannelsUpdate
+) -> NotificationChannels:
+    """来源：S10 Step 6 → Step 10。切换立即生效；全关时 outbox 的 pending 顺延保留（EX-D2.1）。"""
+    from sqlalchemy import update as sa_update
+
+    from app.db import session_scope
+    from app.models import User
+
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(
+            422, detail={"code": "VALIDATION_FAILED", "message": "至少要提交一个开关"}
+        )
+    async with session_scope(user_id) as session:
+        await session.execute(
+            sa_update(User).where(User.id == user_id).values(**changes)
+        )
+        row = await session.get(User, user_id)
+    return NotificationChannels(push_enabled=row.push_enabled, email_enabled=row.email_enabled)
 
 
 # ------------------------------------------------------------------ lite events（S09）

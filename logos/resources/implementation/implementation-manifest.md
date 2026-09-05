@@ -563,3 +563,29 @@ pytest：340 passed, 2 skipped / 0 failed（新增 16 用例）
 vitest：7 passed（前端构建通过）
 test-results.jsonl：320 个唯一 ID（319 pass / 1 skip / 0 fail）
 smoke runner：21 项（SMOKE-core-21 为 ALL 环境可执行）
+
+## notification-channels 增量交付（2026-09-05）
+
+### 覆盖用例（批前声明）
+
+- **UT-S10-01~05、UT-S10-09**（6 个）+ **ST-S10-01~04**（4 个）；UT-S10-06/07/08 由 ST-S10-01/02 在真实投递路径覆盖，UT-S10-10（并发读）为代码审查项；ST-S10-05 为 [manual]
+
+### 业务代码
+
+| 文件 | 职责 |
+|------|------|
+| `app/api.py` | `PATCH /me/notification-channels`（只更新提交字段；空体 422） |
+| `app/schemas.py` | UserProfile 扩展 push_enabled/email_enabled；NotificationChannelsUpdate/Out |
+| `app/scheduler.py` | `_deliver_one` 投递前读取最新开关：push 关直接走邮件（订阅保留）、全关跳过保持 pending（EX-D2.1）、投递成功才计数 |
+| `frontend/src/pages/Me.tsx` + `components` | P6「提醒通道」开关区（Toggle、全关文案「先安静一段时间，想听的时候随时打开」） |
+
+### 实现中发现并修正的问题（一处）
+
+**投递邮件分支残留旧变量引用**：改造 `_deliver_one` 通道选择时，原 `user = await session.get(...)` 行被合并进预读的 `user_row`，但 `send(to=user.email, ...)` 仍引用旧名——运行时 NameError 被记为 `last_error_code`，outbox 静默 pending。ST-S10-01 的真实投递断言暴露。教训：**改造既有函数时对函数内所有同名变量引用做全局核对**。
+
+### 运行结果
+
+```text
+pytest：350 passed, 2 skipped / 0 failed（新增 10 用例）
+test-results.jsonl：331 个唯一 ID（330 pass / 1 skip / 0 fail）
+前端构建与 vitest 7 passed

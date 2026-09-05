@@ -41,7 +41,21 @@ class UserProfile(BaseModel):
     is_anonymous: bool
     onboarded_at: datetime | None = None
     timezone: str
+    push_enabled: bool = True
+    email_enabled: bool = True
     created_at: datetime | None = None
+
+
+class NotificationChannelsUpdate(BaseModel):
+    """S10：只允许提交变更的字段（minProperties 语义由服务端校验空体）。"""
+
+    push_enabled: bool | None = None
+    email_enabled: bool | None = None
+
+
+class NotificationChannels(BaseModel):
+    push_enabled: bool
+    email_enabled: bool
 
 
 class AuthResult(BaseModel):
