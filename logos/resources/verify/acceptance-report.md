@@ -6,10 +6,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 348 |
+| Defined cases | 352 |
 | Manual cases (excluded) | 16 |
-| Executed cases | 348 |
-| Passed | 347 |
+| Executed cases | 352 |
+| Passed | 351 |
 | Failed | 0 |
 | Skipped | 1 |
 | Uncovered | 0 |
@@ -33,6 +33,7 @@
 | ✅ | API required 字段：`answers`（UT-03）、`source`（UT-09/12）、`question_key`（UT-08）全部覆盖 | core-S01-test-cases.md |
 | ✅ | DB UNIQUE/CHECK 约束：`users.email` UNIQUE（UT-15）、两条 users CHECK（UT-13/14）、`onboarding_answers` UNIQUE（UT-17）、`wishes.state` DEFAULT（UT-19）全部覆盖 | core-S01-test-cases.md |
 | ✅ | Phase 2 交互级验收条件（4 条）：ST-S01-01/02/05/07 覆盖，按钮 `disabled` 等纯视觉部分由 ST-S01-10 [manual] 兜底 | core-S01-test-cases.md |
+| ✅ | s02-lite-conversion 增量（4 个）：EX-18.2 第三选项→ST-16、brewing 拒绝→ST-17、actions 枚举→UT-26、归属与文本→UT-27 | core-S02-test-cases.md |
 | ✅ | Phase 1 正常验收条件（2 条）：ST-S02-02（文字）、ST-S02-01（语音跳过追问） | core-S02-test-cases.md |
 | ✅ | Phase 1 异常验收条件（2 条）：ST-S02-09（当下日程）、ST-S02-06/07 + ST-S02-12（转写失败与权限） | core-S02-test-cases.md |
 | ✅ | EX 异常用例（8 个）：EX-2.1→ST-11/12、EX-5.1→ST-04、EX-8.1→ST-05、EX-15.1→ST-06、EX-15.2→ST-07、EX-18.1→ST-08、EX-18.2→ST-09、EX-13.1→ST-10 | core-S02-test-cases.md |
@@ -91,7 +92,7 @@
 | ✅ | 部署方案 §7 的 12 项检查：1→01、2→02、3→06、4→16、5→17、6→04、7→08、8→05、9→15、10→10（仅告警）、11→03、12→18 | smoke\core-smoke-test-cases.md |
 | ✅ | 部署方案 §8.2 的 15 项清单（含 S08/S09 增补）：逐项映射至上表，无遗漏 | smoke\core-smoke-test-cases.md |
 
-**63/63** assertions confirmed.
+**64/64** assertions confirmed.
 
 ## Acceptance Criteria Traceability (Layer 3)
 
@@ -107,6 +108,8 @@
 | S02-AC-02 | 正常：语音输入并跳过追问 | ST-S02-01:✅, UT-S02-21:✅ | ✅ PASS |
 | S02-AC-03 | 异常：输入内容不构成一件未来想做的事 | ST-S02-09:✅, UT-S02-23:✅ | ✅ PASS |
 | S02-AC-04 | 异常：语音转写失败或权限被拒绝 | ST-S02-06:✅, ST-S02-07:✅, ST-S02-12 [manual]:🔵manual, UT-S02-22:✅ | ✅ PASS |
+| S02-AC-05 | 正常（增补）：选择「先记一下」转为轻事件 | ST-S02-16:✅, UT-S02-26/27:🔵manual | ✅ PASS |
+| S02-AC-06 | 异常（增补）：已约定时机的愿望不可转换 | ST-S02-17:✅ | ✅ PASS |
 | S04-AC-01 | 正常：完成第一小步并进入「正在发生」 | ST-S04-01:✅, UT-S04-22:✅, UT-S04-23:✅ | ✅ PASS |
 | S04-AC-02 | 正常：用户要求一个更小的开始 | ST-S04-05:✅, UT-S04-20:✅ | ✅ PASS |
 | S04-AC-03 | 异常：进入「正在发生」后长期没有新动作 | ST-S04-08:✅, UT-S04-24:✅, UT-S04-25:✅ | ✅ PASS |
@@ -135,5 +138,5 @@
 | S10-AC-02 | 正常：全部关闭 = 完全静默，已确认的时机不丢失 | ST-S10-02:✅, UT-S10-07/08:🔵manual | ✅ PASS |
 | S10-AC-03 | 异常：开关切换立即生效且互不牵连 | ST-S10-03:✅, UT-S10-02/05:🔵manual | ✅ PASS |
 
-**35/35** acceptance criteria passed.
+**37/37** acceptance criteria passed.
 
