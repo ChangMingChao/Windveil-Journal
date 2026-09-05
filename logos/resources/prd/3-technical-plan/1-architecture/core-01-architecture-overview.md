@@ -243,6 +243,31 @@ OpenAICompatibleProvider（唯一实现）
 
 **与其他节的关系**：S03 时机提议分支 P3 的有界上下文在组装时追加节假日事实（架构 5.4 第 1 层的输入扩展）；`TimingProposal.evidence` 的 `kind` 枚举扩展 `calendar`，条目 id 为数据文件标识（`holidays-{year}`），与「evidence 只存 ID 引用」的既有约定一致。
 
+### 5.6 轻量事件：结构上无提醒路径（lightweight-events，S09）
+
+```text
+数据形态
+  独立表 lite_events：text_enc 加密、status（open/done 两态）、closed_at（done 配对）。
+  不动 wishes 状态机——「增加事件类型」意味着改 state 枚举与全部状态机约束，
+  侵入性大；独立表让轻事件与愿望天然隔离。
+
+「结构上无提醒路径」的三重保证
+  1. lite_events 无 next_trigger_at / trigger_kind 任何触发字段——Scheduler 的
+     扫描 SQL 只查 wishes，轻事件表不在扫描集合中；
+  2. reminder_outbox.wish_id 外键指向 wishes——轻事件没有可入箱的关联路径；
+  3. 通知文案与周预算代码不引用轻事件——不存在「给轻事件发提醒」的代码分支。
+  「不占用每周提醒额度」因此不是行为约定，而是数据结构使然。
+
+Agent 边界
+  轻事件不调用 LLM（无理解、无追问、无建议）——POST /lite-events 是纯写入。
+  S02 的 near_term_todo 询问分支（EX-18.2）保持两选项不变，
+  「先记一下」第三选项的联动另行提案。
+
+前端形态
+  P1 主输入下方「先记一下」展开区：一句话、无追问、随手划掉。
+  不开新路由（与 S08 同理由：不抢导航注意力），不显示任何计数。
+```
+
 ## 六、非功能性约束
 
 | 类别 | 约束 | 来源 |
@@ -289,8 +314,6 @@ OpenAICompatibleProvider（唯一实现）
 
 部署方案与 smoke 步骤本文件不展开，由 `deployment-designer` 输出到 `logos/resources/prd/3-technical-plan/3-deployment/`。
 
-## 九、场景清单（作为 Phase 3 Step 1 的输入）
-
 | 编号 | 名称 | 优先级 | 参与方 |
 |------|------|--------|--------|
 | S01 | 新用户建立自己的未发生之地 | P0 | PWA、API、PG、LLM |
@@ -301,6 +324,7 @@ OpenAICompatibleProvider（唯一实现）
 | S06 | 把发生过的事写成一页记忆 | P0 | PWA、API、PG、对象存储、LLM |
 | S07 | 唤回一个被安静放下的愿望 | P2 | PWA、API、PG |
 | S08 | 管理偏好与可用时段 | P1 | PWA、API、PG、LLM、Scheduler |
+| S09 | 先记一下并随手划掉 | P1 | PWA、API、PG |
 
 ## 十、待确认事项
 

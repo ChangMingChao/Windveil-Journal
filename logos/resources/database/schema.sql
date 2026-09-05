@@ -678,6 +678,35 @@ CREATE TABLE orphan_objects (
 CREATE INDEX idx_orphan_objects_pending ON orphan_objects(created_at);
 
 -- -----------------------------------------------------------------------------
+-- lite_events（来源：lite-events.yaml → createLiteEvent, listLiteEvents,
+--              markLiteEventDone, deleteLiteEvent；S09）
+-- -----------------------------------------------------------------------------
+CREATE TABLE lite_events (
+  -- @comment 轻事件唯一标识
+  id TEXT PRIMARY KEY NOT NULL,
+  -- @comment 所属用户。SQLite 无 RLS，隔离由仓储层注入 + 运行时守卫保证
+  owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- @comment 一句话轻意图（如「今晚吃火锅」），应用层 AES-256-GCM 加密。
+  -- 它是「还不值得变成愿望的念头」：不调用 Agent、不进提醒队列、不占每周提醒额度
+  text_enc BLOB NOT NULL,
+  -- @comment open 已记下还在列表；done 已划掉（默认列表不含，保留行以备追溯）。
+  -- 收走（硬删除）不留行。刻意没有 dismissed 状态：删除就是硬删，不留影子
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done')),
+  -- @comment 记下时间
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  -- @comment 划掉时间；open 时必须为 NULL（配对约束见下）
+  closed_at TEXT,
+  -- @comment 最后更新时间，由应用层刷新
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  -- @comment done 必须有划掉时间；open 必须没有
+  CONSTRAINT lite_events_closed_state_pairing
+    CHECK ((status = 'done') = (closed_at IS NOT NULL))
+);
+-- @table-comment lite_events 轻量事件。设计核心：本表刻意没有任何触发时间 /
+-- 提醒相关字段，Scheduler 的扫描集合与 reminder_outbox 的关联路径都不包含它——
+-- 「轻事件不占用每周提醒额度」由数据结构保证，而非行为约定（架构 5.6）
+
+-- -----------------------------------------------------------------------------
 -- scheduler_heartbeat（来源：system.yaml → healthCheck）
 -- -----------------------------------------------------------------------------
 CREATE TABLE scheduler_heartbeat (
@@ -707,7 +736,8 @@ CREATE TABLE scheduler_heartbeat (
 --   wish_steps, wish_messages, wish_photos, memories, memory_photos,
 --   push_subscriptions, reminder_outbox, reminder_weekly_counters,
 --   pending_agent_jobs,
---   user_preferences, availability_windows, timing_proposals
+--   user_preferences, availability_windows, timing_proposals,
+--   lite_events
 -- 不受保护（无 owner_id，仅服务进程访问）：orphan_objects, scheduler_heartbeat
 --
 -- **诚实记录代价**：守卫是进程内断言，绕过 ORM 直接开 sqlite3 连接即可绕过它；
@@ -769,6 +799,9 @@ CREATE TABLE scheduler_heartbeat (
 --   system.yaml     healthCheck → scheduler_heartbeat
 --                   testReadOutbox → reminder_outbox, reminder_weekly_counters
 --                   testTriggerSchedulerTick → wishes, reminder_outbox, pending_agent_jobs
+--
+--   lite-events.yaml createLiteEvent / listLiteEvents / markLiteEventDone
+--                   / deleteLiteEvent → lite_events
 --
 -- 无对应 API 端点的表（仅供服务进程使用，刻意如此）：
 --   orphan_objects（清理队列）、scheduler_heartbeat（仅由 healthCheck 读取）
