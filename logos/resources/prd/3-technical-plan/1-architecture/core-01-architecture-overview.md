@@ -290,6 +290,27 @@ Agent 边界
   的竞态错配；最坏情况是一条提醒在切换后 5 分钟内按旧通道投出——可接受。
 ```
 
+```text
+WeatherProvider（抽象，与 LLM/ASR 同模式）
+  forecast(city: str, days: int = 14) -> list[WeatherFact] | None
+    WeatherFact: {date, summary}（日级趋势，最多 14 天）
+  OpenMeteoProvider（唯一实现）：geocoding + forecast 两段查询，
+    base_url 由 WEATHER_BASE_URL 注入（默认官方端点），超时 5 秒、失败返回 None
+
+位置来源（唯一）
+  用户在 P6 声明的偏好 pref_key='location'（declared 行，加密存储，
+  走 S08 既有撤回/删除体系）。未声明 → 不查询、上下文无天气事实。
+
+查询时机与缓存
+  仅 propose_timing 组装上下文时按需查询；进程内按城市缓存 6 小时
+  （同一用户连续生成建议不重复打外部端点）。失败/超时 → None，
+  上下文跳过天气事实（不阻塞、不重试队列）。
+
+evidence 约定
+  天气是瞬时预报，不写入 evidence（与「只存可追溯 ID 引用」的既有约定
+  一致——预报变化后无持久条目可指）；建议理由文案可引用天气事实。
+```
+
 ## 六、非功能性约束
 
 | 类别 | 约束 | 来源 |
