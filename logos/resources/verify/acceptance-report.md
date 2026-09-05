@@ -6,10 +6,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 334 |
-| Manual cases (excluded) | 15 |
-| Executed cases | 334 |
-| Passed | 333 |
+| Defined cases | 348 |
+| Manual cases (excluded) | 16 |
+| Executed cases | 348 |
+| Passed | 347 |
 | Failed | 0 |
 | Skipped | 1 |
 | Uncovered | 0 |
@@ -74,6 +74,11 @@
 | ✅ | EX 异常用例（4 个）：EX-7.1→ST-S09-05（人工）/UT-03、EX-9.1→ST-02、EX-14.1→UT-10、EX-22.1→ST-04/UT-11/12 | core-S09-test-cases.md |
 | ✅ | DB CHECK：status 枚举（UT-05）、closed 配对（UT-06）、部分索引（UT-07） | core-S09-test-cases.md |
 | ✅ | 隐私红线：text_enc 加密（部署方案加密落地 smoke 项覆盖）、跨用户 404（UT-12） | core-S09-test-cases.md |
+| ✅ | 需求 S10 正常验收条件（2 条）：AC-01（关推送走邮件）→ ST-S10-01、AC-02（全关静默不丢时机）→ ST-S10-02 | core-S10-test-cases.md |
+| ✅ | 需求 S10 异常验收条件（1 条）：AC-03（切换立即生效互不牵连）→ ST-S10-03、UT-S10-02/05 | core-S10-test-cases.md |
+| ✅ | EX 异常用例（2 个）：EX-7.1→（保存失败回滚，前端行为，服务端 5xx 语义由 UT 覆盖）、EX-D2.1→UT-S10-07/ST-S10-02 | core-S10-test-cases.md |
+| ✅ | 投递侧：通道选择（UT-06）、跳过不计数（UT-09）、预算约束（UT-08）、并发读（UT-10） | core-S10-test-cases.md |
+| ✅ | 隔离：开关只作用于当前 token 用户（UT-S10-04 的 token 语义 + ST-04） | core-S10-test-cases.md |
 | ✅ | 健康检查：SMOKE-core-01、02 | smoke\core-smoke-test-cases.md |
 | ✅ | 核心入口：SMOKE-core-09 | smoke\core-smoke-test-cases.md |
 | ✅ | 数据库迁移：SMOKE-core-06、07 | smoke\core-smoke-test-cases.md |
@@ -86,7 +91,7 @@
 | ✅ | 部署方案 §7 的 12 项检查：1→01、2→02、3→06、4→16、5→17、6→04、7→08、8→05、9→15、10→10（仅告警）、11→03、12→18 | smoke\core-smoke-test-cases.md |
 | ✅ | 部署方案 §8.2 的 15 项清单（含 S08/S09 增补）：逐项映射至上表，无遗漏 | smoke\core-smoke-test-cases.md |
 
-**58/58** assertions confirmed.
+**63/63** assertions confirmed.
 
 ## Acceptance Criteria Traceability (Layer 3)
 
@@ -126,6 +131,9 @@
 | S09-AC-02 | 正常：轻事件在结构上不产生提醒 | ST-S09-03:✅, UT-S09-08:✅ | ✅ PASS |
 | S09-AC-03 | 异常：空内容不保存 | ST-S09-02:✅, UT-S09-01/02:🔵manual | ✅ PASS |
 | S09-AC-04 | 异常：收走是彻底的，不留影子 | ST-S09-01:✅, UT-S09-11/12:🔵manual | ✅ PASS |
+| S10-AC-01 | 正常：关闭推送、保留邮件 | ST-S10-01:✅, UT-S10-06:✅ | ✅ PASS |
+| S10-AC-02 | 正常：全部关闭 = 完全静默，已确认的时机不丢失 | ST-S10-02:✅, UT-S10-07/08:🔵manual | ✅ PASS |
+| S10-AC-03 | 异常：开关切换立即生效且互不牵连 | ST-S10-03:✅, UT-S10-02/05:🔵manual | ✅ PASS |
 
-**32/32** acceptance criteria passed.
+**35/35** acceptance criteria passed.
 

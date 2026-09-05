@@ -196,3 +196,70 @@ async def test_ST_S10_04_toggle_scoped_to_token_user(env: AsyncClient) -> None:
     await env.patch(f"{BASE}/me/notification-channels", headers=hb, json={"push_enabled": False})
     r = await env.get(f"{BASE}/me", headers=ha)
     assert r.json()["push_enabled"] is True
+
+
+# ---------------------------------------------------------------- UT（投递侧补齐）
+
+
+async def test_UT_S10_06_push_off_never_attempts_push(env: AsyncClient) -> None:
+    """push 关 + email 开 → 直接走邮件，push 通道零调用（UT-S10-06）。"""
+    h, uid = await _signup(env)
+    await _subscribe(env, uid)
+    await env.post(f"{BASE}/auth/link-email", headers=h, json={"email": "c@example.com", "password": "password123"})
+    await _seed_scheduled(env, h, "想在冬天学会滑雪")
+    from app.notify import get_push_sender
+
+    spy = get_push_sender()
+    calls_before = getattr(spy, "calls", 0)
+    await env.patch(f"{BASE}/me/notification-channels", headers=h, json={"push_enabled": False})
+    await env.post("/api/test/clock", json={"now": (T0 + timedelta(days=40)).isoformat()})
+    r = await env.post("/api/test/scheduler/tick")
+    assert r.json()["delivered"] >= 1
+    assert getattr(spy, "calls", calls_before) == calls_before, "已关闭的推送通道不得被调用"
+
+
+async def test_UT_S10_07_all_off_keeps_pending_attempts_untouched(env: AsyncClient) -> None:
+    """全关：跳过且 attempts 保持 0、不置失败（UT-S10-07）。"""
+    h, uid = await _signup(env)
+    await _subscribe(env, uid)
+    await env.post(f"{BASE}/auth/link-email", headers=h, json={"email": "d@example.com", "password": "password123"})
+    await _seed_scheduled(env, h, "想重新开始画画")
+    await env.patch(
+        f"{BASE}/me/notification-channels", headers=h, json={"push_enabled": False, "email_enabled": False}
+    )
+    await env.post("/api/test/clock", json={"now": (T0 + timedelta(days=40)).isoformat()})
+    await env.post("/api/test/scheduler/tick")
+    r = await env.get("/api/test/outbox", params={"user_id": uid}, headers=h)
+    items = r.json()["items"]
+    assert items and all(i["status"] == "pending" for i in items)
+
+
+async def test_UT_S10_08_recovery_respects_weekly_budget(env: AsyncClient) -> None:
+    """恢复后投递受周预算约束：4 条到期，重开 email → 3 条 delivered + 1 条顺延（UT-S10-08）。"""
+    h, uid = await _signup(env)
+    await env.post(f"{BASE}/auth/link-email", headers=h, json={"email": "e@example.com", "password": "password123"})
+    for text in ("甲", "乙", "丙", "丁"):
+        await _seed_scheduled(env, h, f"想把{text}这件事做了")
+    await env.patch(
+        f"{BASE}/me/notification-channels", headers=h, json={"push_enabled": False, "email_enabled": False}
+    )
+    await env.post("/api/test/clock", json={"now": (T0 + timedelta(days=40)).isoformat()})
+    await env.post("/api/test/scheduler/tick")  # 全关：全部保持 pending
+    await env.patch(f"{BASE}/me/notification-channels", headers=_fresh(uid), json={"email_enabled": True})
+    r = await env.post("/api/test/scheduler/tick")
+    assert r.json()["delivered"] == 3 and r.json()["deferred"] == 1, r.json()
+
+
+async def test_UT_S10_10_delivery_reads_latest_toggle(env: AsyncClient) -> None:
+    """投递读取的是最新开关：PATCH 提交后立刻 tick，新值即刻生效（UT-S10-10）。"""
+    h, uid = await _signup(env)
+    await _subscribe(env, uid)
+    await env.post(f"{BASE}/auth/link-email", headers=h, json={"email": "f@example.com", "password": "password123"})
+    await _seed_scheduled(env, h, "想去学陶艺")
+    # 不做任何等待：PATCH 提交后立即触发投递
+    await env.patch(f"{BASE}/me/notification-channels", headers=h, json={"push_enabled": False})
+    await env.post("/api/test/clock", json={"now": (T0 + timedelta(days=40)).isoformat()})
+    r = await env.post("/api/test/scheduler/tick")
+    assert r.json()["delivered"] >= 1
+    r = await env.get("/api/test/outbox", params={"user_id": uid}, headers=h)
+    assert r.json()["items"][0]["channel"] == "email", "提交后的新开关必须在同一轮投递生效"
