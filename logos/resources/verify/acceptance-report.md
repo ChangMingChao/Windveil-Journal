@@ -6,10 +6,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 352 |
+| Defined cases | 358 |
 | Manual cases (excluded) | 16 |
-| Executed cases | 352 |
-| Passed | 351 |
+| Executed cases | 358 |
+| Passed | 357 |
 | Failed | 0 |
 | Skipped | 1 |
 | Uncovered | 0 |
@@ -40,6 +40,16 @@
 | ✅ | API required 字段：`kind`/`content_type`/`size_bytes`（UT-01~05）、`source`+`media_id`（UT-07）全部覆盖 | core-S02-test-cases.md |
 | ✅ | DB UNIQUE/CHECK 约束：`object_key` UNIQUE（UT-12）、`media.status` CHECK（UT-13）、`media_size_within_limit`（UT-03/04）、`wishes_voice_requires_audio`（UT-15）、`degraded_reason` CHECK（UT-16）、`wish_photos` PK（UT-17）、`pending_agent_jobs` 去重（UT-19）全部覆盖 | core-S02-test-cases.md |
 | ✅ | Phase 2 交互级验收条件（4 条）：ST-S02-01/02/09 + ST-S02-12 [manual] | core-S02-test-cases.md |
+| ✅ | Phase 1 正常验收条件（2 条）：ST-S03-01、ST-S03-11 | core-S03-test-cases.md |
+| ✅ | Phase 1 异常验收条件（2 条）：ST-S03-04、ST-S03-07 | core-S03-test-cases.md |
+| ✅ | EX 异常用例（9 个）：EX-4.1→ST-04、EX-4.2→ST-05、EX-9.1→ST-06、EX-11.1→ST-03、EX-14.1→ST-07/12、EX-14.2→ST-08、EX-16.1→ST-09、EX-16.2→ST-10、EX-20.1→ST-11 | core-S03-test-cases.md |
+| ✅ | API required 字段：`type`（UT-01）覆盖；组合必填（season/month_day/after_months）UT-03~07 覆盖 | core-S03-test-cases.md |
+| ✅ | DB UNIQUE/CHECK 约束：`idx_reminder_outbox_once`（UT-13）、`delivered_count` CHECK（UT-14）、`status` CHECK（UT-15）、`delivered_has_channel`（UT-16）、周计数 PK（UT-17）、`endpoint` UNIQUE（UT-18）、两条 wishes CHECK（UT-11/12）全部覆盖 | core-S03-test-cases.md |
+| ✅ | Phase 2 交互级验收条件（4 条）：ST-S03-01/04/07/11 | core-S03-test-cases.md |
+| ✅ | S08 增量 EX 异常用例（5 个）：EX-P.1→ST-19、EX-P.2→UT-37/38、EX-P.3→ST-17、EX-P.4→UT-35、EX-P.5→ST-18 | core-S03-test-cases.md |
+| ✅ | S08 增量 DB 约束：`idx_timing_proposals_single_pending`（UT-33）、`status` CHECK（UT-31）、`decided_state_pairing`（UT-32）、`confidence` CHECK（UT-30）全部覆盖 | core-S03-test-cases.md |
+| ✅ | 四层边界断言：模型不落时间（UT-40）、确认不接受时间字段（UT-35）、调度器不读提议（UT-40 间接 + ST-21） | core-S03-test-cases.md |
+| ✅ | holiday-aware-timing 增量（10 个）：EX-P.6→UT-44/ST-22、EX-P.7→UT-47（边界确认）；节假日 UT-41~48 全部实现；数据文件 fixed-value 策略（架构第七节）落地为样例数据注入 | core-S03-test-cases.md |
 | ✅ | Phase 1 正常验收条件（2 条）：ST-S04-01、ST-S04-05 | core-S04-test-cases.md |
 | ✅ | Phase 1 异常验收条件（2 条）：ST-S04-08、ST-S04-09 | core-S04-test-cases.md |
 | ✅ | EX 异常用例（7 个）：EX-8.1→ST-03、EX-8.2→ST-04、EX-13.1→ST-05、EX-13.2→ST-06、EX-15.1→ST-07、EX-15.2→ST-08/10、EX-23.1→ST-09 | core-S04-test-cases.md |
@@ -92,7 +102,7 @@
 | ✅ | 部署方案 §7 的 12 项检查：1→01、2→02、3→06、4→16、5→17、6→04、7→08、8→05、9→15、10→10（仅告警）、11→03、12→18 | smoke\core-smoke-test-cases.md |
 | ✅ | 部署方案 §8.2 的 15 项清单（含 S08/S09 增补）：逐项映射至上表，无遗漏 | smoke\core-smoke-test-cases.md |
 
-**64/64** assertions confirmed.
+**74/74** assertions confirmed.
 
 ## Acceptance Criteria Traceability (Layer 3)
 
@@ -110,6 +120,11 @@
 | S02-AC-04 | 异常：语音转写失败或权限被拒绝 | ST-S02-06:✅, ST-S02-07:✅, ST-S02-12 [manual]:🔵manual, UT-S02-22:✅ | ✅ PASS |
 | S02-AC-05 | 正常（增补）：选择「先记一下」转为轻事件 | ST-S02-16:✅, UT-S02-26/27:🔵manual | ✅ PASS |
 | S02-AC-06 | 异常（增补）：已约定时机的愿望不可转换 | ST-S02-17:✅ | ✅ PASS |
+| S03-AC-01 | 正常：约定季节触发并在时机到达时收到通知 | ST-S03-01:✅, UT-S03-19:✅, UT-S03-26:✅ | ✅ PASS |
+| S03-AC-02 | 正常：时机到达但用户选择顺延 | ST-S03-11:✅, UT-S03-28:✅ | ✅ PASS |
+| S03-AC-03 | 异常：用户选择不必提醒 | ST-S03-04:✅, UT-S03-21:✅ | ✅ PASS |
+| S03-AC-04 | 异常：同一时间窗口内多张卡片同时触发 | ST-S03-07:✅, ST-S03-12:✅, UT-S03-23:✅ | ✅ PASS |
+| S08-AC-03 | 异常（S08 增补）：模型提议未经确认不会变成任何提醒 | ST-S03-16（确认前无副作用 + 确认后走既有预算）、ST-S03-17、UT-S03-35/36/40:🔵manual | 🔵 MANUAL |
 | S04-AC-01 | 正常：完成第一小步并进入「正在发生」 | ST-S04-01:✅, UT-S04-22:✅, UT-S04-23:✅ | ✅ PASS |
 | S04-AC-02 | 正常：用户要求一个更小的开始 | ST-S04-05:✅, UT-S04-20:✅ | ✅ PASS |
 | S04-AC-03 | 异常：进入「正在发生」后长期没有新动作 | ST-S04-08:✅, UT-S04-24:✅, UT-S04-25:✅ | ✅ PASS |
@@ -138,5 +153,5 @@
 | S10-AC-02 | 正常：全部关闭 = 完全静默，已确认的时机不丢失 | ST-S10-02:✅, UT-S10-07/08:🔵manual | ✅ PASS |
 | S10-AC-03 | 异常：开关切换立即生效且互不牵连 | ST-S10-03:✅, UT-S10-02/05:🔵manual | ✅ PASS |
 
-**37/37** acceptance criteria passed.
+**41/42** acceptance criteria passed. 🔵 1 criteria are manual-only (pending human verification).
 
