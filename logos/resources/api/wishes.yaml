@@ -524,6 +524,31 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
 
+  /wishes/{wish_id}/convert-to-lite:
+    parameters:
+      - $ref: '#/components/parameters/WishId'
+    post:
+      operationId: convertWishToLiteEvent
+      tags: [wishes]
+      summary: "先记一下（把这条输入转成轻事件）"
+      description: "来源：s02-lite-conversion、S02 EX-18.2 增补。同一事务内删除 wish 行（照片关联与 pending 提醒一并级联清除）并新建同文本的 lite_event。仅 seeded 状态可转换。"
+      responses:
+        '201':
+          description: "已转换为轻事件；原 wish_id 此后访问返回 404"
+          content:
+            application/json:
+              schema: { $ref: 'lite-events.yaml#/components/schemas/LiteEvent' }
+        '409':
+          description: "当前状态不允许转换（STATE_TRANSITION_NOT_ALLOWED）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: "不存在或不属于当前用户（WISH_NOT_FOUND）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
   /wishes/{wish_id}/steps/next:
     parameters:
       - $ref: '#/components/parameters/WishId'
@@ -896,10 +921,10 @@ components:
           description: "Agent 的一句追问，恰好 1 句；降级时为 null"
         actions:
           type: array
-          description: "S02 EX-18.2 的两个动作"
+          description: "S02 EX-18.2 的询问选项（near_term_todo 时返回）：就当成未来的事 / 先记一下（s02-lite-conversion 新增）/ 删掉它"
           items:
             type: string
-            enum: [keep_as_future, delete]
+            enum: [keep_as_future, save_as_lite, delete]
         degraded:
           type: boolean
           description: "true 表示 LLM 或 ASR 降级，前端跳过轻问并显示纸色提示条"

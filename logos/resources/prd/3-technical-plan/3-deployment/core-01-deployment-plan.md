@@ -235,6 +235,12 @@ bash ops/post-deploy-check.sh   # 见第七节
 | 新增配置 | 无新增环境变量 |
 | smoke 清单联动 | 新增 **SMOKE-core-21**（先记一下 → 划掉 → 收走 → 无残留），smoke 总数 20 → 21 |
 
+| 项 | 内容 |
+|----|------|
+| 新增表 | 无。无数据库迁移 |
+| 行为兼容 | `SeedWishResult.actions` 为枚举扩展（新增 `save_as_lite`）：旧前端不认识该值时自然不渲染按钮（响应向后兼容）；新前端 + 旧后端的组合会因端点 404 而隐藏选项——双向安全 |
+| smoke | 不新增。SMOKE-core-10（种下）的 agent-mock 默认模式不返回 near_term_todo，行为不变 |
+
 ## 六、回滚策略
 
 | 层 | 策略 |
