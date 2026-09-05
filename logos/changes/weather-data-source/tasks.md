@@ -10,7 +10,15 @@
 - [ ] 验证 `logos/resources/api/` 下所有 YAML 有效且符合 OpenAPI 3.x
 
 ## [code] 代码实现
-（本段在 plan 阶段留空：需要实现 WeatherProvider 抽象与 Open-Meteo 兼容实现、提议上下文天气注入、测试与 OpenLogos reporter；具体切片由 merge 后的 slice-planner 基于已合并规格与真实 UT/ST ID 规划。）
+（单批闭环，已提交。）
+
+- [x] `app/weather.py`（新增）：WeatherProvider 抽象 + OpenMeteoProvider（geocoding+forecast 两段，超时 5 秒静默降级）+ 城市级 6 小时缓存 + `WEATHER_BASE_URL` 未配置时能力整体静默
+- [x] `app/config.py`：WEATHER_BASE_URL 环境变量（空 = 静默）
+- [x] `app/proposals.py`：`_bounded_context` 注入天气事实（仅当用户声明 location 偏好）；不写 evidence
+- [x] `app/schemas.py` + `app/models.py`：PreferenceKey 扩 `location`
+- [x] 测试：UT-S03-49~53 + ST-S03-24（6 个，`tests/test_s03_weather.py`），FakeWeather fixed-value 注入
+- [x] 全量回归 364 passed / 2 skipped / 0 failed
+- [x] 实现修正（一处，影响 S10 既有代码）：`refresh_preference_digests` 在 run_tick 主事务内嵌套开写事务导致 `database is locked`（weather 测试暴露）——已将两个低频任务移出主事务、digest 函数自管事务
 
 ## [deploy] 部署任务
 - [ ] 按合并后的部署方案部署到 staging（配置 WEATHER_BASE_URL；无数据库迁移）

@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     IMAGE_MIME_WHITELIST: tuple[str, ...] = ("image/jpeg", "image/png", "image/webp")
     ORPHAN_MEDIA_TTL_HOURS: int = 24  # S02 EX-13.1
 
+    WEATHER_BASE_URL: str = ""  # Open-Meteo 兼容端点；空 = 天气能力整体静默（架构 5.8）
     SMTP_HOST: str = "localhost"
     SMTP_PORT: int = 1025
     SMTP_FROM: str = "noreply@unhappened.local"

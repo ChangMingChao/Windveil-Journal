@@ -162,6 +162,18 @@ async def _bounded_context(session: AsyncSession, owner_id: uuid.UUID, wish: Wis
     if facts:
         evidence.append({"kind": "calendar", "id": f"holidays-{clock.now().year}"})
 
+    # 天气事实（weather-data-source）：位置唯一来源是用户声明的「所在城市」偏好。
+    # 未声明 / 供应商不可用 → 无天气行，能力整体静默（架构 5.8）；
+    # 天气是瞬时预报，不写 evidence（proposal 边界）。
+    location_row = next((p for p in prefs if p.pref_key == "location"), None)
+    if location_row is not None:
+        from app.weather import cached_forecast
+
+        facts = await cached_forecast(location_row.value_enc)
+        if facts:
+            w = facts[0]
+            lines.append(f"天气：{location_row.value_enc} 未来天气——{w.date} {w.summary}（等 {len(facts)} 天趋势）")
+
     lines.append(f"这件事本身：{wish.original_text_enc or wish.title_enc}")
     return "\n".join(lines), evidence
 

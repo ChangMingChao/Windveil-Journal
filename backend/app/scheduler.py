@@ -322,14 +322,15 @@ async def run_tick() -> TickResult:
                         continue
                     await _deliver_one(session, row, result)
 
-                # 低频任务 1：提议过期扫描（S03 分支第 3 层，S08 增补）
-                from app.proposals import expire_stale_proposals
-                result.expired_proposals = await expire_stale_proposals(session)
-
-                # 低频任务 2：偏好摘要生成（S08 摘要支线 D1–D4，每日一次）
-                result.digest_updated = await refresh_preference_digests(session)
-
                 await _beat(session)
+
+        # 低频任务在主事务之外以独立事务执行：摘要任务（upsert_digest）会开自己的
+        # 写事务，嵌套在主 SQLite 写事务内会撞 database is locked（weather 测试暴露）
+        from app.proposals import expire_stale_proposals
+        async with session_scope() as low_session:
+            with owner_guard_bypass():
+                result.expired_proposals = await expire_stale_proposals(low_session)
+        result.digest_updated = await refresh_preference_digests()
         return result
     finally:
         lock.release()
@@ -341,7 +342,7 @@ INSTANCE_ID = f"{os.uname().nodename if hasattr(os, 'uname') else 'host'}-{os.ge
 DIGEST_INTERVAL = timedelta(hours=24)  # 需求 5.4 第 5 条的当前假设：每日低频生成
 
 
-async def refresh_preference_digests(session: AsyncSession) -> int:
+async def refresh_preference_digests() -> int:
     """S08 摘要支线 D1–D4：为偏好有更新（超过间隔）的用户重新生成「它的理解」。
 
     LLM 降级时保持既有 digest 不变、不重试队列（EX-D2.1）；没有 entry 行的用户跳过。
@@ -350,10 +351,13 @@ async def refresh_preference_digests(session: AsyncSession) -> int:
     from app.models import UserPreference
     from app.preferences import upsert_digest
 
+    from app.db import get_sessionmaker
+
     provider = get_llm_provider()
     if provider is None:
         return 0
     now = clock.now()
+    session = get_sessionmaker()()
     updated = 0
     owners = (
         (
@@ -406,6 +410,7 @@ async def refresh_preference_digests(session: AsyncSession) -> int:
             continue  # EX-D2.1：保持旧值，下一周期自然重试
         await upsert_digest(owner_id, result.summary)
         updated += 1
+    await session.close()
     return updated
 
 

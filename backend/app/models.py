@@ -39,7 +39,7 @@ MEMORY_DRAFTED_FIELDS = ("title", "cause", "process")
 # S08：偏好的两种来源与两种行形态；提议只允许 4 种时间类（signal/none 不是「可执行的时间」）
 PREFERENCE_SOURCES = ("declared", "inferred")
 PREFERENCE_KINDS = ("entry", "digest")
-PREFERENCE_KEYS = ("relaxation", "pace", "companion", "budget", "other")
+PREFERENCE_KEYS = ("relaxation", "pace", "companion", "budget", "other", "location")
 DIGEST_KEY = "overall"
 PROPOSAL_TIMING_TYPES = ("season", "month_day", "after_months", "free_weekend")
 PROPOSAL_STATUSES = ("pending", "confirmed", "rejected", "expired")

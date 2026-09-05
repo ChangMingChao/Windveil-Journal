@@ -219,7 +219,7 @@ class MemoryListResponse(BaseModel):
 
 # ---------- auth.yaml（preferences tag，S08）----------
 
-PreferenceKey = Literal["relaxation", "pace", "companion", "budget", "other"]
+PreferenceKey = Literal["relaxation", "pace", "companion", "budget", "other", "location"]
 
 
 class DeclarePreferenceRequest(BaseModel):

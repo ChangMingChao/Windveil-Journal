@@ -614,3 +614,30 @@ test-results.jsonl：331 个唯一 ID（330 pass / 1 skip / 0 fail）
 ```text
 pytest：357 passed, 2 skipped / 0 failed（全量）；S04-07 单跑通过（偶发抖动）
 test-results.jsonl：332 个唯一 ID（331 pass / 1 skip / 0 fail）
+
+## weather-data-source 增量交付（2026-09-05）
+
+### 覆盖用例（批前声明）
+
+- **UT-S03-49 ~ UT-S03-53**（5 个）+ **ST-S03-24**（1 个），全部实现并写 JSONL
+
+### 业务代码
+
+| 文件 | 职责 |
+|------|------|
+| `app/weather.py`（新增） | WeatherProvider 抽象 + OpenMeteoProvider（geocoding+forecast 两段、超时 5 秒、失败 None）+ 城市级 6 小时缓存 + `WEATHER_BASE_URL` 未配置时整体静默 |
+| `app/config.py` | `WEATHER_BASE_URL` 环境变量（默认空 = 静默） |
+| `app/proposals.py` | `_bounded_context` 注入天气事实行（仅当用户声明 location 偏好）；天气不写 evidence |
+| `app/schemas.py` / `app/models.py` | PreferenceKey / PREFERENCE_KEYS 扩 `location` |
+| `tests/test_s03_weather.py`（新增） | FakeWeather fixed-value 注入（可记录调用次数、可置不可用） |
+
+### 实现中发现并修正的问题（一处，影响 S10 既有代码）
+
+**`refresh_preference_digests` 在 run_tick 主事务内嵌套开写事务**——摘要任务的 `upsert_digest` 自开 `session_scope`，与主 SQLite 写事务并发时撞 `database is locked`（ST-S03-24 暴露，随机性取决于主事务是否持写锁）。已将两个低频任务（提议过期扫描、摘要生成）移出主事务、以独立事务顺序执行。
+
+### 运行结果
+
+```text
+pytest：364 passed, 2 skipped / 0 failed（新增 6 用例）
+test-results.jsonl：332 个唯一 ID（331 pass / 1 skip / 0 fail）
+前端未变更（无新屏；城市声明复用 P6 既有偏好输入）
