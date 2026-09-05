@@ -12,9 +12,14 @@ FROM python:3.12-slim AS builder
 # uv 从官方 distroless 镜像取，版本钉死（部署方案：镜像 tag 一律不用 latest）
 COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /usr/local/bin/uv
 
+# PyPI 镜像源可按构建环境覆盖（默认官方源）：网络受限的本机构建传
+# --build-arg UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple。
+# 只影响依赖下载，不改变锁定的版本解析。
+ARG UV_DEFAULT_INDEX=https://pypi.org/simple
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
-    UV_PYTHON_DOWNLOADS=never
+    UV_PYTHON_DOWNLOADS=never \
+    UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX}
 
 WORKDIR /src
 COPY pyproject.toml ./

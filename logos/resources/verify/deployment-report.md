@@ -165,3 +165,21 @@ BLOB 往返时炸在一个莫名的汉字上（已固定 UTF-8）。
 - `ops/local-ca.crt` 已从当前 Caddy 数据卷重新导出（CA 与卷绑定，卷重建即变）；
 - `SMOKE-core-10` 走降级路径 PASS 并带 warning（本机无真实 LLM 端点，.env 补了占位值）；
 - `SMOKE-core-18` 日志明文抽查以 warning 记录（未提供 SMOKE_LOG_CMD）。
+
+## lightweight-events 增量部署演练（2026-09-05）
+
+> 目标环境：本机 `staging`｜镜像 `unhappened-api:22c69df`｜授权：用户选择「本地部署演练」
+
+### 执行摘要
+
+| 步骤 | 结果 |
+|------|------|
+| 迁移前备份 | ⚠️ 跳过（api 容器未运行，deploy.sh 按「首次部署」分支处理）；本次迁移为加表类（0009），`downgrade -1` 安全，风险可控——已如实记录 |
+| 迁移 0008 → 0009 | ✅ `lite_events` 一表一索引；部署后核对 21 张表 / 37 索引（SMOKE-core-06/07） |
+| 五单元 | ✅ 全部 `unhappened-api:22c69df` 就位，api healthy |
+| 部署后检查 + smoke | ✅ **20 pass / 1 skip（SMOKE-core-17 内部 CA，预期）/ 0 fail**；SMOKE-core-21（先记一下链路 + outbox 无轻事件行断言）首次真实执行通过 |
+
+### 过程中发现并修正的问题（两处）
+
+1. **Docker 构建因 pypi.org 直连超时失败**（源码变更使依赖层缓存失效，`uv pip install` 40 秒超时）。Dockerfile 新增 `ARG UV_DEFAULT_INDEX`（默认官方源不变），本机构建传清华镜像源跑通——只影响依赖下载，不改变锁定的版本解析。正式环境构建仍走官方源。
+2. **deploy.sh 后台执行被输出管道阻塞**（`bash deploy.sh | tail -40` 在长构建期间吞输出假死）。已改为前台分步执行；`ops/deploy.sh` 长构建场景建议直接前台运行。
