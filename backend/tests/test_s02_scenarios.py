@@ -269,7 +269,8 @@ async def test_ST_S02_09_near_term_todo_offers_two_actions(env) -> None:  # noqa
     assert r.status_code == 201
     body = r.json()
     assert body["wish"]["understanding"]["kind"] == "near_term_todo"
-    assert body["actions"] == ["keep_as_future", "delete"]
+    # s02-lite-conversion：EX-18.2 的选项由两个扩展为三个（新增 save_as_lite）
+    assert body["actions"] == ["keep_as_future", "save_as_lite", "delete"]
     assert "未来" in body["question"]
     assert "格式错误" not in body["question"]
     wish_id = body["wish"]["id"]

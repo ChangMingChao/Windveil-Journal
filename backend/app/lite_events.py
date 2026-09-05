@@ -81,6 +81,16 @@ async def mark_done(session: AsyncSession, owner_id: uuid.UUID, event_id: uuid.U
     return _item(row)
 
 
+async def create_from_wish(session: AsyncSession, owner_id: uuid.UUID, wish_row) -> dict:
+    """s02-lite-conversion：从 wish 转换——同事务删 wish 行、建同文本轻事件。
+
+    照片/语音与 Agent 理解结果不迁移（规格边界：转换只保留文本）。
+    """
+    item = await create(session, owner_id, wish_row.original_text_enc or wish_row.title_enc)
+    await session.delete(wish_row)
+    return item
+
+
 async def delete(session: AsyncSession, owner_id: uuid.UUID, event_id: uuid.UUID) -> None:
     """DELETE /{id}。硬删除，无软删除标记；重复或跨用户一律 404（EX-22.1）。"""
     row = await session.get(LiteEvent, event_id)

@@ -11,7 +11,12 @@
 - [ ] 验证 `logos/resources/api/` 下所有 YAML 有效且符合 OpenAPI 3.x
 
 ## [code] 代码实现
-（本段在 plan 阶段留空：需要实现 convert-to-lite 端点（同事务删除 wish + 新建 lite_event）、actions 枚举扩展与 OpenLogos reporter；具体切片由 merge 后的 slice-planner 基于已合并规格与真实 UT/ST ID 规划。）
+（单批闭环，已提交。）
+
+- [x] `app/api.py`：`POST /wishes/{id}/convert-to-lite`（仅 seeded；同事务删 wish 建 lite_event）；actions 三选项
+- [x] `app/lite_events.py`：`create_from_wish`（文本迁移，照片/理解不迁移）；`app/schemas.py` actions 枚举扩展
+- [x] 既有 ST-S02-09 断言更新为三选项（枚举扩展的预期行为变化）
+- [x] 测试：UT-S02-26/27 + ST-S02-16/17（4 个），全量回归 357 passed / 2 skipped（S04-07 为已知偶发抖动，单跑通过）
 
 ## [deploy] 部署任务
 - [ ] 按合并后的部署方案部署到 staging（无数据库迁移）

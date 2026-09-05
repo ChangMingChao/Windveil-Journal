@@ -257,7 +257,7 @@ async def post_wishes(payload: SeedWishRequest, user_id: CurrentUser) -> SeedWis
     return SeedWishResult(
         wish=detail,
         question=None if degraded else question,
-        actions=["keep_as_future", "delete"] if near_term else None,
+        actions=["keep_as_future", "save_as_lite", "delete"] if near_term else None,
         degraded=degraded,
     )
 
@@ -383,6 +383,26 @@ async def post_recall(wish_id: UUID, user_id: CurrentUser) -> WishDetail:
             return await detail_of(session, wish)
     except DomainError as exc:
         raise _err(exc) from exc
+
+
+@router.post("/wishes/{wish_id}/convert-to-lite", status_code=201, response_model=LiteEventOut)
+async def post_convert_to_lite(wish_id: UUID, user_id: CurrentUser) -> LiteEventOut:
+    """来源：s02-lite-conversion、S02 EX-18.2 增补。仅 seeded 可转换；同事务删 wish 建 lite_event。"""
+    from app.db import session_scope
+    from app.lite_events import create_from_wish
+    from app.models import Wish
+
+    try:
+        async with session_scope(user_id) as session:
+            wish = await session.get(Wish, wish_id)
+            if wish is None or wish.owner_id != user_id:
+                raise DomainError(404, "WISH_NOT_FOUND", "找不到这件事")
+            if wish.state != "seeded":
+                raise DomainError(409, "STATE_TRANSITION_NOT_ALLOWED", "已经开始了的事不能这样收起来")
+            item = await create_from_wish(session, user_id, wish)
+    except DomainError as exc:
+        raise _err(exc) from exc
+    return LiteEventOut(**item)
 
 
 @router.delete("/wishes/{wish_id}", status_code=204)

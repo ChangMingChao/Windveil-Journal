@@ -150,7 +150,7 @@ class WishDetail(WishCard):
 class SeedWishResult(BaseModel):
     wish: WishDetail
     question: str | None = None
-    actions: list[Literal["keep_as_future", "delete"]] | None = None
+    actions: list[Literal["keep_as_future", "save_as_lite", "delete"]] | None = None
     degraded: bool
 
 

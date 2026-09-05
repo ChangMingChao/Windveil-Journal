@@ -589,3 +589,28 @@ smoke runner：21 项（SMOKE-core-21 为 ALL 环境可执行）
 pytest：350 passed, 2 skipped / 0 failed（新增 10 用例）
 test-results.jsonl：331 个唯一 ID（330 pass / 1 skip / 0 fail）
 前端构建与 vitest 7 passed
+
+## s02-lite-conversion 增量交付（2026-09-05）
+
+### 覆盖用例（批前声明）
+
+- **UT-S02-26 / UT-S02-27** + **ST-S02-16 / ST-S02-17**（4 个）；既有 ST-S02-09 的 actions 断言更新为三选项
+
+### 业务代码
+
+| 文件 | 职责 |
+|------|------|
+| `app/api.py` | `POST /wishes/{id}/convert-to-lite`（仅 seeded；409 拒绝）+ actions 三选项 |
+| `app/lite_events.py` | `create_from_wish`（同事务删 wish 建同文本 lite_event；照片/理解不迁移） |
+| `app/schemas.py` | SeedWishResult.actions 枚举扩展 |
+| `tests/test_s02_lite_conversion.py`（新增） | 4 个用例 |
+
+### 实现中发现并修正的问题（一处）
+
+**actions 硬编码在服务层**：wishes.yaml delta 只改了 schema 枚举，实际列表在 `api.py` 的 `actions=["keep_as_future", "delete"]`——ST-S02-16 暴露。已同步三选项；既有 ST-S02-09 断言更新。
+
+### 运行结果
+
+```text
+pytest：357 passed, 2 skipped / 0 failed（全量）；S04-07 单跑通过（偶发抖动）
+test-results.jsonl：332 个唯一 ID（331 pass / 1 skip / 0 fail）
