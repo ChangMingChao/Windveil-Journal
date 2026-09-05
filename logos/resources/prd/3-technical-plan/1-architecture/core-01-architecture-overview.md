@@ -270,6 +270,8 @@ Agent 边界
   不开新路由（与 S08 同理由：不抢导航注意力），不显示任何计数。
 ```
 
+### 5.7 提醒通道自控与投递通道选择（notification-channels，S10）
+
 ```text
 开关模型
   users.push_enabled / email_enabled（既有列），PATCH /me/notification-channels
