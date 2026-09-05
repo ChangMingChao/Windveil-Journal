@@ -1,4 +1,3 @@
-
 {
   "$schema_note": "OpenLogos API 编排测试总索引（Phase 3 Step 4b）。本文件不含可执行 flow，只登记全局约定、覆盖统计与待确认项。",
   "module": "core",
@@ -17,7 +16,7 @@
     {
       "scenario": "S03",
       "path": "logos/resources/scenario/core-S03-timing.json",
-      "flows": 12
+      "flows": 19
     },
     {
       "scenario": "S04",
