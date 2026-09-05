@@ -133,8 +133,11 @@ scenarios:
   - id: S09
     name: 先记一下并随手划掉
     feature: F05
+  - id: S10
+    name: 管理提醒通道
+    feature: F02
 scenario_counter:
-  next_id: 10
+  next_id: 11
 modules:
   - id: core
     name: 核心功能
@@ -244,6 +247,14 @@ resource_index:
     desc: S09 先记一下并随手划掉测试用例（UT-S09-01~12 / ST-S09-01~05，含 1 个 [manual]）。涉及双层空内容拒绝、三重无提醒路径断言、硬删除无影子、跨用户 404 时必读。
   - path: logos/resources/scenario/core-S09-lite-events.json
     desc: S09 API 编排测试（4 个 flow）。涉及全链路（记下/划掉/收走 + outbox 无轻事件行）、空内容拒绝、愿望互不干扰、跨用户隔离；ST-S09-05 为人工视觉验证，DB 约断言留 code-level，见 not_orchestrated 时必读。
+  - path: logos/resources/prd/2-product-design/1-feature-specs/core-07-notification-channels-design.md
+    desc: S10 管理提醒通道产品设计。涉及 P6「提醒通道」开关区（推送/邮件独立 toggle）、全关文案「先安静一段时间，想听的时候随时打开」、失败回滚、明确不存在的元素（无确认弹层/冷静期/内疚文案）时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S10-channels.md
+    desc: S10 管理提醒通道场景时序图。涉及开关读写（PATCH /me/notification-channels）与投递侧通道选择 D 支线（push 关直接走邮件、全关跳过保持 pending）、EX-7.1/EX-D2.1 时必读。
+  - path: logos/resources/test/core-S10-test-cases.md
+    desc: S10 管理提醒通道测试用例（UT-S10-01~10 / ST-S10-01~05，含 1 个 [manual]）。涉及双层空体拒绝、通道选择与恢复后周预算约束、开关只作用于当前 token 用户时必读。
+  - path: logos/resources/scenario/core-S10-channels.json
+    desc: S10 API 编排测试（4 个 flow）。涉及关推送走邮件、全关静默后重开恢复、快速切换互不牵连、跨用户 token 隔离；UT 投递侧断言留 code-level，见 not_orchestrated 时必读。
   - path: logos/resources/implementation/implementation-manifest.md
     desc: 实现清单。涉及六维打分结果与 7 个批次的分批策略、Batch 1 已交付的业务代码与测试代码文件职责映射、覆盖用例 ID、运行结果与 skip 语义说明、sourceRoots 与 verify.pre_run_command 配置变更、Step 5 自检结论时必读。
 conventions:
