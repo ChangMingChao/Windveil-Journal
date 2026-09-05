@@ -6,10 +6,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 318 |
-| Manual cases (excluded) | 14 |
-| Executed cases | 318 |
-| Passed | 317 |
+| Defined cases | 334 |
+| Manual cases (excluded) | 15 |
+| Executed cases | 334 |
+| Passed | 333 |
 | Failed | 0 |
 | Skipped | 1 |
 | Uncovered | 0 |
@@ -69,19 +69,24 @@
 | ✅ | DB CHECK / UNIQUE：declared_is_certain（UT-09）、digest_never_revoked（UT-10）、unique_key（UT-11）、availability_ordered（UT-05）、三表守卫（UT-12） | core-S08-test-cases.md |
 | ✅ | 隐私红线：value/note 加密（UT-13）、写响应不回显（UT-04）、硬删除无影子（UT-18） | core-S08-test-cases.md |
 | ✅ | Phase 2 交互级验收条件（4 条）：ST-S08-01/03/04/05；视觉 2 条 manual（07/08） | core-S08-test-cases.md |
+| ✅ | 需求 S09 正常验收条件（2 条）：AC-01（记下并划掉）→ ST-S09-01、AC-02（结构上无提醒）→ ST-S09-03、UT-S09-08 | core-S09-test-cases.md |
+| ✅ | 需求 S09 异常验收条件（2 条）：AC-03（空内容）→ ST-S09-02、UT-S09-01/02、AC-04（收走无影子）→ ST-S09-01、UT-S09-11 | core-S09-test-cases.md |
+| ✅ | EX 异常用例（4 个）：EX-7.1→ST-S09-05（人工）/UT-03、EX-9.1→ST-02、EX-14.1→UT-10、EX-22.1→ST-04/UT-11/12 | core-S09-test-cases.md |
+| ✅ | DB CHECK：status 枚举（UT-05）、closed 配对（UT-06）、部分索引（UT-07） | core-S09-test-cases.md |
+| ✅ | 隐私红线：text_enc 加密（部署方案加密落地 smoke 项覆盖）、跨用户 404（UT-12） | core-S09-test-cases.md |
 | ✅ | 健康检查：SMOKE-core-01、02 | smoke\core-smoke-test-cases.md |
 | ✅ | 核心入口：SMOKE-core-09 | smoke\core-smoke-test-cases.md |
 | ✅ | 数据库迁移：SMOKE-core-06、07 | smoke\core-smoke-test-cases.md |
 | ✅ | 静态资源：SMOKE-core-16 | smoke\core-smoke-test-cases.md |
 | ✅ | 配置与密钥：SMOKE-core-03、04、05 | smoke\core-smoke-test-cases.md |
-| ✅ | 关键链路：SMOKE-core-10、11、12、13、15、19、20 | smoke\core-smoke-test-cases.md |
+| ✅ | 关键链路：SMOKE-core-10、11、12、13、15、19、20、21 | smoke\core-smoke-test-cases.md |
 | ✅ | 日志与监控：SMOKE-core-18 | smoke\core-smoke-test-cases.md |
-| ✅ | S08 基础链路：SMOKE-core-19、SMOKE-core-20 | smoke\core-smoke-test-cases.md |
-| ✅ | 表数量断言联动：SMOKE-core-07 更新为 20 张表 | smoke\core-smoke-test-cases.md |
+| ✅ | S09 基础链路：SMOKE-core-21 | smoke\core-smoke-test-cases.md |
+| ✅ | 表数量断言联动：SMOKE-core-07 更新为 21 张表 | smoke\core-smoke-test-cases.md |
 | ✅ | 部署方案 §7 的 12 项检查：1→01、2→02、3→06、4→16、5→17、6→04、7→08、8→05、9→15、10→10（仅告警）、11→03、12→18 | smoke\core-smoke-test-cases.md |
-| ✅ | 部署方案 §8.2 的 14 项清单（含 S08 增补的关键链路与隔离/加密扩展）：逐项映射至上表，无遗漏 | smoke\core-smoke-test-cases.md |
+| ✅ | 部署方案 §8.2 的 15 项清单（含 S08/S09 增补）：逐项映射至上表，无遗漏 | smoke\core-smoke-test-cases.md |
 
-**53/53** assertions confirmed.
+**58/58** assertions confirmed.
 
 ## Acceptance Criteria Traceability (Layer 3)
 
@@ -117,6 +122,10 @@
 | S08-AC-02 | 正常：撤回一条模型推断 | ST-S08-03:✅, UT-S08-16:✅ | ✅ PASS |
 | S08-AC-03 | 异常：模型提议未经确认不会变成任何提醒 | ST-S03-16:✅, ST-S03-17:✅, UT-S03-35/36/40（S03 增量文件）:🔵manual | ✅ PASS |
 | S08-AC-04 | 异常：删除是彻底的，不留任何影子 | ST-S08-04:✅, UT-S08-17/18:🔵manual, UT-S08-13:✅ | ✅ PASS |
+| S09-AC-01 | 正常：记下并划掉 | ST-S09-01:✅ | ✅ PASS |
+| S09-AC-02 | 正常：轻事件在结构上不产生提醒 | ST-S09-03:✅, UT-S09-08:✅ | ✅ PASS |
+| S09-AC-03 | 异常：空内容不保存 | ST-S09-02:✅, UT-S09-01/02:🔵manual | ✅ PASS |
+| S09-AC-04 | 异常：收走是彻底的，不留影子 | ST-S09-01:✅, UT-S09-11/12:🔵manual | ✅ PASS |
 
-**28/28** acceptance criteria passed.
+**32/32** acceptance criteria passed.
 
