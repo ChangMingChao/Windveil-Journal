@@ -89,23 +89,25 @@ graph TB
 
 **关于 LLM 供应商中立的一处代价**：走 OpenAI 兼容层意味着只能使用兼容层暴露的能力（`chat.completions` + `response_format` 结构化输出 + 流式）。若将来要用某家的原生特性（例如 Anthropic 的 adaptive thinking、细粒度 prompt caching），需要在 `LLMProvider` 抽象下额外实现一个原生适配器——抽象层已为此预留，但第一版不做。
 
-## 四、组件职责与代码结构
-
 ```text
 frontend/                      React 19 + Vite（纯静态产物）
   src/pages/                   /、/welcome、/garden、/wish/:id、/book、/book/:id、/me
-  src/components/              愿望卡、状态徽标、半屏、时间线、记忆页、建议卡（S08）
+  src/components/              愿望卡、状态徽标、半屏、时间线、记忆页、建议卡（S08）、
+                               轻事件区（S09）、提醒通道开关区（S10）
   src/theme/tokens.css         由 design-system.json 生成，禁止手改
   src/api/                     由后端 OpenAPI 生成的类型与客户端
 backend/
   app/api/v1/                  路由层：仅做参数校验与调用 service
   app/services/                业务层：愿望状态机、提醒预算、记忆页组装、
-                               偏好与可用时段、时机建议四层链路（S08）
+                               偏好与可用时段、时机建议四层链路（S08）、
+                               轻事件（S09）、通道开关与投递通道选择（S10）
   app/agent/                   LLMProvider 抽象、提示词、结构化输出模型、降级策略
   app/repositories/            数据访问，统一注入 owner_id
   app/models/                  SQLAlchemy 模型
-  app/scheduler/               独立入口：扫描到期时机 → 写 outbox → 投递；
-                               低频任务：提议过期扫描、偏好摘要生成（S08）
+  app/scheduler/               独立入口：扫描到期时机 → 写 outbox → 投递
+                               （投递前按最新开关选择通道，S10）；
+                               低频任务：提议过期扫描、偏好摘要生成（S08）。
+                               轻事件不在任何扫描集合中（S09）
   migrations/                  Alembic
 ```
 
@@ -268,6 +270,24 @@ Agent 边界
   不开新路由（与 S08 同理由：不抢导航注意力），不显示任何计数。
 ```
 
+```text
+开关模型
+  users.push_enabled / email_enabled（既有列），PATCH /me/notification-channels
+  读写；切换立即生效（无冷静期、无确认）。全部关闭 = 完全静默。
+
+投递侧通道选择（Scheduler 每轮投递时读取最新开关）
+  push 开                    → 走 Push（410 失效 → 删订阅 → 转邮件，若邮件开）
+  push 关 + email 开         → 直接走邮件（不对已关闭通道做无谓调用）
+  全关                       → 跳过该 pending 记录：不投递、不计失败、不改退避、
+                               不累加统计——保持 pending，下一轮再查；
+                               用户重开任一通道后自然恢复（受周预算约束）
+  「已确认的时机不因关通道丢失」由此保证：pending 记录永不因开关被删除。
+
+并发语义
+  开关在投递的同一事务/同一时刻读取，避免「读开关 → 用户切换 → 按旧值投递」
+  的竞态错配；最坏情况是一条提醒在切换后 5 分钟内按旧通道投出——可接受。
+```
+
 ## 六、非功能性约束
 
 | 类别 | 约束 | 来源 |
@@ -288,6 +308,8 @@ Agent 边界
 
 | 依赖 | 供应商形态 | 用于场景 | 测试策略 | 说明 |
 |------|-----------|---------|---------|------|
+## 七、外部依赖与测试策略
+
 | LLM | 任意 OpenAI 兼容 `/v1/chat/completions` | S01, S02, S04, S06, S03（时机建议，S08）, S08（偏好摘要） | `mock-service` | 本地起 OpenAI 兼容 mock，返回固定结构化 JSON；另提供「强制失败」开关以覆盖全部降级验收条件。时机建议的 mock 需支持返回 `propose_timing` 固定草稿与「不可用」两种模式 |
 | ASR | 任意 OpenAI 兼容 `/v1/audio/transcriptions` | S02 | `mock-service` | 同上；失败模式用于验证「保留原始音频 + 可重试转写」 |
 | Web Push | 浏览器推送服务（VAPID） | S03, S04 | `env-disable` + `test-api` | 测试环境关闭真实投递，只写 `reminder_outbox`；由 `GET /api/test/outbox?user_id=` 读取以断言周预算与去重 |
@@ -316,6 +338,8 @@ Agent 边界
 
 | 编号 | 名称 | 优先级 | 参与方 |
 |------|------|--------|--------|
+## 九、场景清单（作为 Phase 3 Step 1 的输入）
+
 | S01 | 新用户建立自己的未发生之地 | P0 | PWA、API、PG、LLM |
 | S02 | 随手种下一个愿望并被理解 | P0 | PWA、API、PG、对象存储、ASR、LLM |
 | S03 | 为一个愿望约定属于它的时机 | P0 | PWA、API、PG、Scheduler、Push、邮件 |
