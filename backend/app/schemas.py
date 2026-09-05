@@ -278,8 +278,10 @@ class AvailabilityListResponse(BaseModel):
 
 
 class ProposalEvidence(BaseModel):
-    kind: Literal["preference", "availability", "timeline"]
-    id: UUID
+    # id 放宽为 string：calendar 条目（holiday-aware-timing）的 id 是数据文件标识
+    # （如 holidays-2026），不是用户数据行的 UUID
+    kind: Literal["preference", "availability", "timeline", "calendar"]
+    id: str
 
 
 class ProposalValidation(BaseModel):

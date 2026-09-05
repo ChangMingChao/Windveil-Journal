@@ -151,6 +151,17 @@ async def _bounded_context(session: AsyncSession, owner_id: uuid.UUID, wish: Wis
         lines.append(f"可用时段：{names[w.weekday]} {w.start_minute // 60:02d}:{w.start_minute % 60:02d} 起")
         evidence.append({"kind": "availability", "id": str(w.id)})
 
+    # 节假日事实（holiday-aware-timing）：临近节假日的日期区间与调休提示。
+    # 数据来自内置文件，无网络请求；缺年份时 upcoming_facts 为空、不加 calendar 条目
+    # ——与「Agent 不可用也不阻塞」同一降级哲学（EX-P.6）。
+    from app.holidays import upcoming_facts
+
+    facts = upcoming_facts(clock.now().date())
+    for fact in facts[:3]:
+        lines.append(f"节假日：{fact}")
+    if facts:
+        evidence.append({"kind": "calendar", "id": f"holidays-{clock.now().year}"})
+
     lines.append(f"这件事本身：{wish.original_text_enc or wish.title_enc}")
     return "\n".join(lines), evidence
 

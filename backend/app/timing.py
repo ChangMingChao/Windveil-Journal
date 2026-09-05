@@ -103,9 +103,20 @@ def plan_timing(
         )
 
     if timing_type == "free_weekend":
-        # 下一个周六
-        ahead = (5 - today.weekday()) % 7 or 7
-        target = today + timedelta(days=ahead)
+        # 「空闲周末」= 下一个非调休的周末日（holiday-aware-timing）：
+        # 从明天起顺延扫描，命中第一个「周六或周日 且 不在当年调休上班日中」的日期。
+        # 数据缺年份时 workdays 恒为空 → 第一个周末命中，即退化为现状语义（EX-P.6）。
+        # 触发时刻沿用既有的本地上午约定；上限 45 天防死循环（数据最密也不会扫满）。
+        from app.holidays import is_workday
+
+        target = None
+        for offset in range(1, 46):
+            day = today + timedelta(days=offset)
+            if day.weekday() >= 5 and not is_workday(day):
+                target = day
+                break
+        if target is None:  # pragma: no cover —— 45 天内必有周末，防御性兜底
+            target = today + timedelta(days=(5 - today.weekday()) % 7 or 7)
         when = _local_at(tz, target)
         return TimingPlan(
             "free_weekend", None, "time", when, f"free_weekend:{target.isoformat()}"
