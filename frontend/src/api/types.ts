@@ -126,3 +126,11 @@ export interface AvailabilityWindow {
   created_at: string;
   updated_at?: string | null;
 }
+
+export interface LiteEvent {
+  id: string;
+  text: string;
+  status: "open" | "done";
+  created_at: string;
+  closed_at: string | null;
+}

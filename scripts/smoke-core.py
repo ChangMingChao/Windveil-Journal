@@ -298,10 +298,9 @@ def smoke_06(ctx: Ctx) -> str | None:
 
 def smoke_07(ctx: Ctx) -> str | None:
     tables, indexes = schema_counts()
-    # preferences-availability-timing 提案：17 张表 → 20 张（user_preferences /
-    # availability_windows / timing_proposals），idx_ 索引 29 → 36
-    assert tables == 20, f"表数量是 {tables}，期望 20"
-    assert indexes == 36, f"idx_ 索引数量是 {indexes}，期望 36"
+    # preferences-availability-timing：17→20 张；lightweight-events：20→21 张（lite_events）
+    assert tables == 21, f"表数量是 {tables}，期望 21"
+    assert indexes == 37, f"idx_ 索引数量是 {indexes}，期望 37"
     return None
 
 
@@ -679,6 +678,32 @@ def smoke_20(ctx: Ctx) -> str | None:
     return None
 
 
+def smoke_21(ctx: Ctx) -> str | None:
+    """先记一下 → 划掉 → 收走 → 无残留；outbox 无轻事件相关行（S09 结构性保证）。"""
+    status, _, created = http(
+        "POST", "/api/v1/lite-events", token=ctx.token_a, body={"text": "smoke：今晚吃火锅"}
+    )
+    assert status == 201, f"记下返回 {status}：{created}"
+    assert created["text"] == "smoke：今晚吃火锅" and created["status"] == "open"
+    event_id = created["id"]
+
+    status, _, listing = http("GET", "/api/v1/lite-events", token=ctx.token_a)
+    assert status == 200 and any(i["id"] == event_id for i in listing["items"])
+
+    status, _, done = http("POST", f"/api/v1/lite-events/{event_id}/done", token=ctx.token_a)
+    assert status == 200 and done["status"] == "done" and done["closed_at"]
+    status, _, _ = http("POST", f"/api/v1/lite-events/{event_id}/done", token=ctx.token_a)
+    assert status == 409, f"重复划掉应 409，得到 {status}"
+    status, _, _ = http("DELETE", f"/api/v1/lite-events/{event_id}", token=ctx.token_a)
+    assert status == 204, f"收走返回 {status}"
+    status, _, _ = http("DELETE", f"/api/v1/lite-events/{event_id}", token=ctx.token_a)
+    assert status == 404, f"重复收走应 404，得到 {status}"
+
+    rows = db_rows("SELECT count(*) FROM reminder_outbox")
+    assert rows[0][0] == 0, f"outbox 出现了 {rows[0][0]} 行——轻事件不得有提醒路径"
+    return None
+
+
 CASES = (
     Case("SMOKE-core-01", ALL, "健康检查接口可访问且数据库连通", smoke_01),
     Case("SMOKE-core-02", DEPLOYED, "调度进程存活", smoke_02),
@@ -700,6 +725,7 @@ CASES = (
     Case("SMOKE-core-18", DEPLOYED, "加密落地、日志无明文、smoke 数据已清理", smoke_18),
     Case("SMOKE-core-19", ALL, "偏好声明与读取（含不回显与加密断言）", smoke_19),
     Case("SMOKE-core-20", ALL, "可用时段保存与读取", smoke_20),
+    Case("SMOKE-core-21", ALL, "先记一下链路（outbox 无轻事件行）", smoke_21),
 )
 
 

@@ -19,7 +19,15 @@
 - [x] 验证 `logos/resources/api/` 下所有 YAML 有效且符合 OpenAPI 3.x
 
 ## [code] 代码实现
-（本段在 plan 阶段留空：需要实现 lite_events 模型与迁移 0009、lite-events 服务与 4 端点、P1 前端入口与列表、测试与 OpenLogos reporter；具体切片由 merge 后的 slice-planner 基于已合并规格与真实 UT/ST ID 规划。）
+（单批闭环，已提交。）
+
+- [x] `app/models.py`：LiteEvent（open/done 两态 + closed 配对 CHECK）；迁移 `0009_lightweight_events.py`（exec_driver_sql 逐条，含部分索引）
+- [x] `app/lite_events.py`（新增）：create（strip + 1–200 校验）/ list（默认 open）/ mark_done（409 幂等保护）/ delete（硬删）——模块内无任何提醒相关分支
+- [x] `app/api.py`：4 端点（tag: lite-events）；`app/schemas.py`：LiteEventCreate/Out/ListResponse
+- [x] `db.py` 守卫清单 + conftest MIGRATIONS 加 0009
+- [x] 前端：`components/LiteEvents.tsx`（P1 展开区：记录/划掉/收走/空态，无计数）+ `Welcome.tsx` 挂载 + `api/types.ts` LiteEvent
+- [x] smoke：SMOKE-core-21（先记一下链路 + outbox 无轻事件行断言）；表数量断言 20→21、索引 36→37
+- [x] 测试：UT-S09-01~12 + ST-S09-01~04（16 个），全量回归 340 passed / 2 skipped / 0 failed
 
 ## [deploy] 部署任务
 - [ ] 按合并后的部署方案部署到 staging

@@ -706,6 +706,10 @@ CREATE TABLE lite_events (
 -- 提醒相关字段，Scheduler 的扫描集合与 reminder_outbox 的关联路径都不包含它——
 -- 「轻事件不占用每周提醒额度」由数据结构保证，而非行为约定（架构 5.6）
 
+-- 「先记一下」列表：open 状态按记下时间倒序（S09 Step 4）
+CREATE INDEX idx_lite_events_owner_open
+  ON lite_events(owner_id, created_at DESC) WHERE status = 'open';
+
 -- -----------------------------------------------------------------------------
 -- scheduler_heartbeat（来源：system.yaml → healthCheck）
 -- -----------------------------------------------------------------------------

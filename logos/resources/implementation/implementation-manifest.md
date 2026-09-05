@@ -532,3 +532,34 @@ smoke runner：20 项（SMOKE-core-19/20 为 ALL 环境可执行）
 ```text
 pytest：324 passed, 2 skipped / 0 failed（新增 10 用例）
 test-results.jsonl：315 个唯一 ID（314 pass / 1 skip / 0 fail）
+
+## lightweight-events 增量交付（2026-09-05）
+
+### 覆盖用例（批前声明）
+
+- **UT-S09-01 ~ UT-S09-12**（12 个）+ **ST-S09-01 ~ ST-S09-04**（4 个），全部实现并写 JSONL；ST-S09-05 为 [manual]
+
+### 业务代码
+
+| 文件 | 职责 | 对应规格 |
+|------|------|---------|
+| `app/models.py` + `migrations/versions/0009_lightweight_events.py` | LiteEvent（open/done 两态 + closed 配对 CHECK + open 部分索引） | schema.sql 逐条对齐 |
+| `app/lite_events.py`（新增） | create（strip+校验）/ list / mark_done（409 幂等）/ delete（硬删）——模块内无任何提醒相关分支 | lite-events.yaml、core-S09 时序图 |
+| `app/api.py`（4 端点） | POST/GET /lite-events、POST /{id}/done、DELETE /{id} | lite-events.yaml |
+| `app/db.py` | 守卫清单加 lite_events | schema.sql 文末 |
+| `scripts/smoke-core.py` | SMOKE-core-21（先记一下链路 + **outbox 无轻事件行**断言）；表数量 20→21、索引 36→37 | smoke 用例 |
+| `frontend/src/components/LiteEvents.tsx`（新增）+ `Welcome.tsx` | P1「先记一下」展开区（记录/划掉/收走/空态，无计数） | core-06 设计文档 |
+
+### 实现中发现并修正的问题（两处）
+
+1. **schema 合并脚本丢弃了索引块**：lite_events 的 delta 有两个 sql 块（表 + 部分索引），合并脚本只取了 blocks[0]——索引直到 UT-S09-07 才暴露，已补进 schema.sql 与 0009 迁移。
+2. **0009 迁移的 `
+` 转义再次被 heredoc 破坏**（连续第三次），已在 Edit 阶段修复；后续生成迁移应彻底放弃 heredoc 内嵌代码。
+
+### 运行结果
+
+```text
+pytest：340 passed, 2 skipped / 0 failed（新增 16 用例）
+vitest：7 passed（前端构建通过）
+test-results.jsonl：320 个唯一 ID（319 pass / 1 skip / 0 fail）
+smoke runner：21 项（SMOKE-core-21 为 ALL 环境可执行）

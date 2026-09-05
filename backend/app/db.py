@@ -46,6 +46,7 @@ OWNED_TABLES = frozenset(
         "user_preferences",
         "availability_windows",
         "timing_proposals",
+        "lite_events",
     }
 )
 

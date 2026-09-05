@@ -27,6 +27,9 @@ from app.schemas import (
     AvailabilityOut,
     AvailabilityUpdateRequest,
     DeclarePreferenceRequest,
+    LiteEventCreate,
+    LiteEventListResponse,
+    LiteEventOut,
     PreferenceListResponse,
     PreferenceMeta,
     ProposalConfirmResult,
@@ -906,6 +909,64 @@ def _proposal_out_of(row) -> dict:
         "expires_at": row.expires_at,
         "decided_at": row.decided_at,
     }
+
+
+# ------------------------------------------------------------------ lite events（S09）
+
+
+@router.post("/lite-events", status_code=201, response_model=LiteEventOut)
+async def post_lite_event(user_id: CurrentUser, payload: LiteEventCreate) -> LiteEventOut:
+    """来源：S09 Step 8 → Step 13。纯写入：无 Agent、无提醒、无任何副作用扩散。"""
+    from app.db import session_scope
+    from app.lite_events import create
+
+    try:
+        async with session_scope(user_id) as session:
+            item = await create(session, user_id, payload.text)
+    except DomainError as exc:
+        raise _err(exc) from exc
+    return LiteEventOut(**item)
+
+
+@router.get("/lite-events", response_model=LiteEventListResponse)
+async def get_lite_events(
+    user_id: CurrentUser, include_done: Annotated[bool, Query()] = False
+) -> LiteEventListResponse:
+    """来源：S09 Step 3 → Step 7。默认只取 open 状态；无分页、无计数字段。"""
+    from app.db import session_scope
+    from app.lite_events import list_events
+
+    async with session_scope(user_id) as session:
+        items = await list_events(session, user_id, include_done=include_done)
+    return LiteEventListResponse(items=[LiteEventOut(**i) for i in items])
+
+
+@router.post("/lite-events/{event_id}/done", response_model=LiteEventOut)
+async def post_lite_event_done(user_id: CurrentUser, event_id: UUID) -> LiteEventOut:
+    """来源：S09 Step 14 → Step 18。已关闭的事件重复 done 返回 409（EX-14.1）。"""
+    from app.db import session_scope
+    from app.lite_events import mark_done
+
+    try:
+        async with session_scope(user_id) as session:
+            item = await mark_done(session, user_id, event_id)
+    except DomainError as exc:
+        raise _err(exc) from exc
+    return LiteEventOut(**item)
+
+
+@router.delete("/lite-events/{event_id}", status_code=204)
+async def delete_lite_event(user_id: CurrentUser, event_id: UUID) -> Response:
+    """来源：S09 Step 19 → Step 22。硬删除；重复或跨用户一律 404（EX-22.1）。"""
+    from app.db import session_scope
+    from app.lite_events import delete as delete_event
+
+    try:
+        async with session_scope(user_id) as session:
+            await delete_event(session, user_id, event_id)
+    except DomainError as exc:
+        raise _err(exc) from exc
+    return Response(status_code=204)
 
 
 # ------------------------------------------------------------------ 测试后门

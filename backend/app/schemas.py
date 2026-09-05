@@ -325,3 +325,22 @@ class ProposalListResponse(BaseModel):
 
 
 WishDetail.model_rebuild()
+
+
+# ---------- lite-events.yaml（S09）----------
+
+
+class LiteEventCreate(BaseModel):
+    text: str = Field(min_length=1, max_length=200)
+
+
+class LiteEventOut(BaseModel):
+    id: UUID
+    text: str
+    status: Literal["open", "done"]
+    created_at: datetime
+    closed_at: datetime | None = None
+
+
+class LiteEventListResponse(BaseModel):
+    items: list[LiteEventOut]

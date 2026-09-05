@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import type { WishDetail } from "../api/types";
+import LiteEvents from "../components/LiteEvents";
 
 /** S01 首次体验 + 随手种下。三道温柔的问题可以整段跳过（Step 8 / EX-12.1）。 */
 const QUESTIONS = [
@@ -120,6 +121,7 @@ export default function Welcome() {
           </div>
         )}
       </section>
+      <LiteEvents />
     </main>
   );
 }

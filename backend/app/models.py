@@ -492,6 +492,40 @@ class MemoryPhoto(Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
+class LiteEvent(Base):
+    """轻量事件（S09）。一句话轻意图的纯记录。
+
+    刻意没有任何触发时间 / 提醒相关字段：Scheduler 的扫描集合与 reminder_outbox
+    的关联路径都不包含本表——「轻事件不占用每周提醒额度」由数据结构保证
+    （架构 5.6）。状态只有 open/done 两态，收走（硬删除）不留行。
+    """
+
+    __tablename__ = "lite_events"
+
+    id: Mapped[uuid.UUID] = _pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    text_enc: Mapped[str] = mapped_column(EncryptedText, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="open")
+    created_at: Mapped[datetime] = mapped_column(
+        TZDateTime, nullable=False, server_default=func.now()
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(TZDateTime)
+    updated_at: Mapped[datetime] = mapped_column(
+        TZDateTime, nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("status IN ('open', 'done')", name="lite_events_status_check"),
+        # done 必须有划掉时间；open 必须没有
+        CheckConstraint(
+            "(status = 'done') = (closed_at IS NOT NULL)",
+            name="lite_events_closed_state_pairing",
+        ),
+    )
+
+
 class SchedulerHeartbeat(Base):
     """单行表（id = 1）。健康检查读 last_beat_at 判断调度进程是否还活着。"""
 
@@ -676,6 +710,7 @@ __all__ = [
     "PushSubscription",
     "ReminderOutbox",
     "ReminderWeeklyCounter",
+    "LiteEvent",
     "SchedulerHeartbeat",
     "Session",
     "TimingProposal",
