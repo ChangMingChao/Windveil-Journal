@@ -1310,6 +1310,144 @@
           ]
         }
       ]
+    },
+    {
+      "case_id": "ST-S03-22",
+      "type": "normal",
+      "description": "手动设置 free_weekend 命中真实休息日（非调休上班日）",
+      "covers_steps": "主路径 Step 5 增补 + EX-P.6 退化边界由 UT 覆盖",
+      "steps": [
+        {
+          "step": "前置：种下一个愿望",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "source": "text",
+            "text": "想去看一次日出"
+          },
+          "expected_status": 201,
+          "extract": {
+            "wish_id": "body.wish.id"
+          }
+        },
+        {
+          "step": "Step 5 增补: 设置 free_weekend",
+          "method": "PUT",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "type": "free_weekend"
+          },
+          "expected_status": 200,
+          "assert": [
+            "body.state == 'brewing'",
+            "body.timing.next_trigger_at != null"
+          ]
+        },
+        {
+          "step": "断言触发日为周末且非打包数据的调休上班日（服务端计算）",
+          "method": "GET",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 200,
+          "assert": [
+            "body.timing.trigger_kind == 'time'",
+            "weekday(body.timing.next_trigger_at) in (5, 6)",
+            "not in_workdays(body.timing.next_trigger_at)"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "ST-S03-23",
+      "type": "normal",
+      "description": "建议理由可引用节假日：evidence 含 calendar 条目，确认后提醒链路不变",
+      "covers_steps": "分支 P3/P11/P12 增补",
+      "steps": [
+        {
+          "step": "前置：种下一个愿望",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {
+            "source": "text",
+            "text": "想在冬天学会滑雪"
+          },
+          "expected_status": 201,
+          "extract": {
+            "wish_id": "body.wish.id"
+          }
+        },
+        {
+          "step": "前置：LLM mock 置为 propose_timing（理由引用节假日事实）",
+          "method": "PUT",
+          "url": "{{mock_base}}/_control",
+          "body": {
+            "mode": "propose_timing"
+          },
+          "expected_status": 204
+        },
+        {
+          "step": "P2→P10: 生成建议",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 200,
+          "extract": {
+            "proposal_id": "body.proposal.id"
+          },
+          "assert": [
+            "body.proposal.status == 'pending'",
+            "body.proposal.validation.valid == true"
+          ]
+        },
+        {
+          "step": "P11: evidence 含 calendar 条目（有打包数据的年份）或为空（缺年份降级）",
+          "method": "GET",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "expected_status": 200,
+          "assert": [
+            "every(e in body.items[0].evidence : e.kind != 'calendar' or starts_with(e.id, 'holidays-'))"
+          ]
+        },
+        {
+          "step": "P12→P15: 确认建议",
+          "method": "POST",
+          "url": "{{base_url}}/api/v1/wishes/{{wish_id}}/timing-proposals/{{proposal_id}}/confirm",
+          "headers": {
+            "Authorization": "Bearer {{access_token}}"
+          },
+          "body": {},
+          "expected_status": 200,
+          "assert": [
+            "body.wish.state == 'brewing'",
+            "body.proposal.status == 'confirmed'"
+          ]
+        },
+        {
+          "step": "确认后的提醒链路与节假日无关（文案仍为模板拼接）",
+          "method": "GET",
+          "url": "{{mock_base}}/_stats",
+          "expected_status": 200,
+          "assert": [
+            "body.chat_completions_calls == 0"
+          ]
+        }
+      ]
     }
   ],
   "fragments": {
@@ -1379,5 +1517,13 @@
   },
   "not_orchestrated": {
     "note": "S03 时机提议分支的 6 个 ST（ST-S03-16~21）全部编排。EX-P.2（规则校验不通过）与 EX-P.4（confirm 携带时间字段）由 UT-S03-37/38/35 在代码级覆盖——LLM mock 无法稳定产生「非法草稿」模式，且 422 断言不依赖跨服务协作。"
+  },
+  "runner_assert_helpers": {
+    "note": "holiday-aware-timing 增补：以下辅助断言函数属 code 阶段编排 runner 的实现要求",
+    "functions": [
+      "weekday(iso_datetime) -> 0=周一..6=周日",
+      "in_workdays(iso_date) -> 日期是否在打包节假日数据的 workdays 中",
+      "starts_with(text, prefix)"
+    ]
   }
 }

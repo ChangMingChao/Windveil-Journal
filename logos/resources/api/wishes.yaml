@@ -821,15 +821,15 @@ components:
           description: "前端映射为「大概猜的 / 比较确定」，不展示裸数字"
         evidence:
           type: array
-          description: "依据条目引用；只存 ID，条目删除后引用自然失效（架构 5.3 增补）"
+          description: "依据条目引用；只存标识不复制内容（架构 5.3 增补）。节假日来源以 calendar 条目表示（holiday-aware-timing）"
           items:
             type: object
             required: [kind, id]
             properties:
               kind:
                 type: string
-                enum: [preference, availability, timeline]
-              id: { type: string, format: uuid }
+                enum: [preference, availability, timeline, calendar]
+              id: { type: string }
         validation:
           type: object
           required: [valid]
