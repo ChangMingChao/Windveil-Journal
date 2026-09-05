@@ -14,7 +14,14 @@
 - [x] 节假日数据文件 schema — 已定义于架构 delta 5.5 节（年份 / source / updated_at / holidays / workdays 五字段契约）；`deltas/backend/` 非合法 delta 类别，不单设数据文件 delta，正式数据文件（以官方公告填充）随 [code] 阶段交付到 `backend/app/data/`
 
 ## [code] 代码实现
-（本段在 plan 阶段留空：需要实现节假日数据加载器、free_weekend 计算的节假日感知、提议上下文组装扩展与 OpenLogos reporter；具体切片由 merge 后的 slice-planner 基于已合并规格与真实 UT/ST ID 规划。）
+（单批闭环，已提交。）
+
+- [x] `app/holidays.py`（新增）：按年份懒加载 + 进程内缓存；schema 缺字段 / 缺年份 / JSON 非法一律空集；`HOLIDAY_DATA_DIR` 测试注入点；`upcoming_facts` 产出上下文事实行
+- [x] `app/data/holidays_2026.json`：2026 数据文件（示意日期，source/updated_at 可追溯，正式数据以官方公告为准）
+- [x] `app/timing.py`：free_weekend 改为「下一个非调休的周末日」逐日顺延扫描（45 天上限兜底），触发时刻不变；season/month_day/after_months 不动
+- [x] `app/proposals.py`：`_bounded_context` 追加节假日事实行 + `evidence` 增加 `calendar` 条目（`holidays-{year}`，有事实才加）
+- [x] `app/schemas.py`：`ProposalEvidence.kind` 扩 `calendar`、`id` 放宽为 string（合并时发现 Pydantic 模型与规格脱节，已同步）
+- [x] 测试：UT-S03-41~48 + ST-S03-22/23（10 个，`tests/test_s03_holidays.py`），全量回归 324 passed / 2 skipped / 0 failed
 
 ## [deploy] 部署任务
 - [ ] 按合并后的部署方案部署到 staging（数据文件随镜像发布；无数据库迁移）

@@ -505,3 +505,30 @@ pytest：313 passed, 2 skipped（新增 46 用例：Batch 8 的 18 + Batch 9 的
 vitest：7 passed（前端既有测试；Me/WishDetail 无新 UT/ST ID，由构建与 [manual] 覆盖）
 test-results.jsonl：282 条（281 pass / 1 skip / 0 fail），无重复 ID
 smoke runner：20 项（SMOKE-core-19/20 为 ALL 环境可执行）
+
+## holiday-aware-timing 增量交付（2026-09-05）
+
+### 覆盖用例（批前声明）
+
+- **UT-S03-41 ~ UT-S03-48**（8 个）+ **ST-S03-22 / ST-S03-23**（2 个），全部实现并写 JSONL
+
+### 业务代码
+
+| 文件 | 职责 | 对应规格 |
+|------|------|---------|
+| `app/holidays.py`（新增） | 年份粒度数据加载器（懒加载 + 缓存 + 三重空集降级）+ `upcoming_facts` 事实行 | 架构 5.5 |
+| `app/data/holidays_2026.json`（新增） | 2026 数据文件（示意日期，正式数据以官方公告为准） | 架构 5.5 schema |
+| `app/timing.py` | free_weekend 改为「下一个非调休的周末日」逐日顺延（45 天上限），触发时刻不变；其余三种时间类不动 | 需求 HO-AC-01/03 |
+| `app/proposals.py` | `_bounded_context` 追加节假日事实行与 `calendar` evidence 条目 | 需求 HO-AC-02 |
+| `app/schemas.py` | `ProposalEvidence.kind` 扩 `calendar`、`id` 放宽为 string | wishes.yaml delta |
+| `tests/test_s03_holidays.py`（新增） | `HOLIDAY_DATA_DIR` 注入受控样例数据（fixed-value） | 架构第七节 |
+
+### 实现中发现并修正的问题（一处）
+
+**`ProposalEvidence` 的 Pydantic 模型与合并后的规格脱节**：合并 wishes.yaml delta 时发现主文档没有独立的 `ProposalEvidence` schema（上个提案把 items 内联在 `TimingProposal.evidence`），delta 因此只改了 YAML 内联处；但 `app/schemas.py` 里的独立 Pydantic 模型仍是三值 kind + UUID 约束——UT-S03-47 真实执行时服务端直接 500（`calendar` 被 literal 校验拒绝、`holidays-2026` 被 UUID 解析拒绝）。已同步为四值 kind + string id。教训：**delta 改 YAML 的同时必须核对 Pydantic 模型是否独立存在**。
+
+### 运行结果
+
+```text
+pytest：324 passed, 2 skipped / 0 failed（新增 10 用例）
+test-results.jsonl：315 个唯一 ID（314 pass / 1 skip / 0 fail）
