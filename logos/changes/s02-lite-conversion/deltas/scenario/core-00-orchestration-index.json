@@ -97,7 +97,7 @@
     "st_defined_total": 148,
     "st_orchestrated": 89,
     "st_manual": 15,
-    "st_code_level_only": 43,
+    "st_code_level_only": 44,
     "note": "st_defined_total 含 Step 4b 回写的 3 个边界用例（ST-S01-11、ST-S02-14、ST-S03-15）、S07 的 9 个 ST、preferences-availability-timing 的 S03 时机提议 6 个 ST 与 S08 的 8 个 ST、holiday-aware-timing 的 2 个 ST、lightweight-events 的 S09 5 个 ST，以及 notification-channels 新增的 S10 5 个 ST（4 编排 + 1 manual）与 10 个 UT。每个 EX 用例均有对应 flow 或说明；s02-lite-conversion 新增 ST-S02-16（编排）。"
   },
   "open_questions": [
