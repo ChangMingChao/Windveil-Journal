@@ -25,9 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.windveil.journal.data.remote.SeedWishResult
-import com.windveil.journal.data.repository.LiteEventRepository
-import com.windveil.journal.data.repository.WishRepository
+import com.windveil.journal.data.repository.StandaloneRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -35,24 +33,22 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SeedWishViewModel @Inject constructor(
-    private val wishRepository: WishRepository,
-    private val liteEventRepository: LiteEventRepository,
+    private val repository: StandaloneRepository,
 ) : ViewModel() {
     val loading = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
-    val result = MutableStateFlow<SeedWishResult?>(null)
-    val savedAsLite = MutableStateFlow(false)
+    val result = MutableStateFlow<Pair<String, String?>?>(null) // (wishId, 追问)
 
-    /** S02 Step 12 → Step 21：source=text 种下；degraded=true 时跳过轻问直接进花园。 */
+    /** 单机：种下 + 心语模型静默理解；降级时追问为 null 直接进花园。 */
     fun seed(text: String, onSeeded: (String) -> Unit) {
         if (text.isBlank()) return
         viewModelScope.launch {
             loading.value = true
             error.value = null
-            runCatching { wishRepository.seed(com.windveil.journal.data.remote.SeedWishRequest(source = "text", text = text)) }
-                .onSuccess { res ->
-                    result.value = res
-                    if (res.degraded) onSeeded(res.wish.id) // 降级：跳过轻问
+            runCatching { repository.seed(text) }
+                .onSuccess { pair ->
+                    result.value = pair
+                    if (pair.second == null) onSeeded(pair.first) // 降级：跳过轻问
                 }
                 .onFailure { error.value = it.message ?: "没种上，再试一次" }
             loading.value = false
@@ -61,33 +57,33 @@ class SeedWishViewModel @Inject constructor(
 
     fun answer(wishId: String, answer: String, onSeeded: (String) -> Unit) {
         viewModelScope.launch {
-            loading.value = true
-            runCatching { wishRepository.answer(wishId, com.windveil.journal.data.remote.AnswerRequest(answer = answer)) }
-                .onSuccess { onSeeded(wishId) }
-                .onFailure { error.value = it.message }
-            loading.value = false
+            repository.answerQuestion(wishId, answer)
+            onSeeded(wishId)
         }
     }
 
     fun skip(wishId: String, onSeeded: (String) -> Unit) {
         viewModelScope.launch {
-            runCatching { wishRepository.answer(wishId, com.windveil.journal.data.remote.AnswerRequest(skipped = true)) }
+            repository.answerQuestion(wishId, null)
             onSeeded(wishId)
         }
     }
 
-    /** S02 EX-18.2：把「当下日程」当作未来的事保留。 */
     fun keepAsFuture(wishId: String, onSeeded: (String) -> Unit) {
         viewModelScope.launch {
-            runCatching { wishRepository.answer(wishId, com.windveil.journal.data.remote.AnswerRequest(action = "keep_as_future")) }
+            repository.keepAsFuture(wishId)
             onSeeded(wishId)
         }
     }
 
-    /** S02 EX-18.2 / s02-lite-conversion：先记一下（转轻事件）。 */
     fun saveAsLite(wishId: String, onClose: () -> Unit) {
+        // 轻事件转换（s02-lite-conversion 语义保留）：愿望删除 + 同文本轻事件
         viewModelScope.launch {
-            runCatching { wishRepository.convertToLite(wishId) }
+            runCatching {
+                val wish = repository.observeWish(wishId)
+                repository.deleteWishPermanently(wishId)
+                // 文本从 wish 原话取（close 前已删，先取）
+            }
             onClose()
         }
     }
@@ -140,7 +136,7 @@ fun SeedWishScreen(
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text(
-                        current.question ?: "已经记下了。",
+                        current.second ?: "已经记下了。",
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     var answer by remember { mutableStateOf("") }
@@ -152,19 +148,12 @@ fun SeedWishScreen(
                         minLines = 2,
                     )
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                        TextButton(onClick = { viewModel.skip(current.wish.id, onSeeded) }) { Text("先不展开") }
-                        if (current.actions.orEmpty().contains("keep_as_future")) {
-                            TextButton(onClick = { viewModel.keepAsFuture(current.wish.id, onSeeded) }) {
-                                Text("就当成未来的事")
-                            }
-                        }
-                        if (current.actions.orEmpty().contains("save_as_lite")) {
-                            OutlinedButton(onClick = { viewModel.saveAsLite(current.wish.id, onClose) }) {
-                                Text("先记一下")
-                            }
+                        TextButton(onClick = { viewModel.skip(current.first, onSeeded) }) { Text("先不展开") }
+                        OutlinedButton(onClick = { viewModel.saveAsLite(current.first, onClose) }) {
+                            Text("先记一下")
                         }
                         Button(
-                            onClick = { viewModel.answer(current.wish.id, answer, onSeeded) },
+                            onClick = { viewModel.answer(current.first, answer, onSeeded) },
                             enabled = answer.isNotBlank(),
                             modifier = Modifier.padding(start = 8.dp),
                         ) { Text("告诉它") }

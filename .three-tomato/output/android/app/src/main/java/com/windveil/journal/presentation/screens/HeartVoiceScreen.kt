@@ -34,8 +34,7 @@ import com.google.gson.Gson
 import com.windveil.journal.data.local.LlmConfig
 import com.windveil.journal.data.local.LlmConfigStore
 import com.windveil.journal.data.remote.HeartVoiceClient
-import com.windveil.journal.data.remote.HeartVoiceResult
-import com.windveil.journal.data.repository.LiteEventRepository
+import com.windveil.journal.data.repository.StandaloneRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -52,14 +51,14 @@ private const val SYSTEM_PROMPT = """你是「未发生事件管理局」的心�
 data class HeartVoiceMessage(
     val role: String, // user | assistant
     val text: String,
-    val recorded: String? = null, // 本条自动记下的轻事件
+    val recorded: String? = null,
 )
 
 @HiltViewModel
 class HeartVoiceViewModel @Inject constructor(
     private val llmConfigStore: LlmConfigStore,
     private val heartVoiceClient: HeartVoiceClient,
-    private val liteEventRepository: LiteEventRepository,
+    private val repository: StandaloneRepository,
 ) : ViewModel() {
     val messages = MutableStateFlow<List<HeartVoiceMessage>>(emptyList())
     val loading = MutableStateFlow(false)
@@ -70,6 +69,7 @@ class HeartVoiceViewModel @Inject constructor(
         viewModelScope.launch { config.value = llmConfigStore.current() }
     }
 
+    /** 每次进入重读配置（用户可能在「我的」页改过）。 */
     fun refreshConfig() {
         viewModelScope.launch { config.value = llmConfigStore.current() }
     }
@@ -94,8 +94,8 @@ class HeartVoiceViewModel @Inject constructor(
             }.onSuccess { result ->
                 var recorded: String? = null
                 if (result.useful && !result.liteEvent.isNullOrBlank()) {
-                    // 有用信息自动记为轻事件（纯记录，无提醒路径）
-                    runCatching { liteEventRepository.create(result.liteEvent.take(200)) }
+                    // 有用信息自动记为本地轻事件（单机：写 Room）
+                    runCatching { repository.createLiteEvent(result.liteEvent.take(200)) }
                         .onSuccess { recorded = result.liteEvent }
                 }
                 messages.value = messages.value + HeartVoiceMessage(
@@ -122,7 +122,6 @@ fun HeartVoiceScreen(viewModel: HeartVoiceViewModel = hiltViewModel()) {
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    // 每次进入心语页都重读配置（用户可能在「我的」页刚改过 url/key/model）
     LaunchedEffect(Unit) { viewModel.refreshConfig() }
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
@@ -201,3 +200,10 @@ fun HeartVoiceScreen(viewModel: HeartVoiceViewModel = hiltViewModel()) {
         }
     }
 }
+
+/** 心语 JSON 结果（模型返回）。 */
+data class HeartVoiceResult(
+    val reply: String? = null,
+    val useful: Boolean = false,
+    @com.google.gson.annotations.SerializedName("lite_event") val liteEvent: String? = null,
+)

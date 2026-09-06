@@ -113,19 +113,21 @@ backend/
 
 **Scheduler 是独立进程而非 FastAPI 后台任务**：提醒必须在无人访问站点时也能触发，`BackgroundTasks` 依附于请求生命周期，无法满足。
 
-### 3.4 Android 原生客户端
+### 3.4 Android 原生客户端（standalone-mode 改写）
 
-| 维度 | 选型 | 理由 | 备选方案 |
-|------|------|------|---------|
-| 来源 | three-tomato（android-generator）按既有 PRD + API 契约生成 | 用户决策；生成物在 `.three-tomato/output/android/`，与 `frontend/` 物理隔离、零侵入 | 人工原生重写（成本高） |
-| 语言 / UI | Kotlin + Jetpack Compose + Material 3 | AI 数据集大、声明式 UI；纸色低饱和主题延续「不制造焦虑」设计原则 | Flutter、React Native |
-| 架构 | MVVM（ViewModel + StateFlow + Repository） | 与 Android 官方推荐一致 | MVI、Clean Architecture |
-| 依赖注入 | Hilt | Android 生态事实标准 | Koin |
-| 网络 | Retrofit + OkHttp + Gson | 对应既有 REST/JSON 契约（协议保留原则）；DTO 用 `@SerializedName` 承载 snake_case | Ktor |
-| 认证 | Bearer access token（DataStore）+ httpOnly refresh cookie（持久化 CookieJar）+ 401 自动刷新重放 | 严格对齐 auth.yaml 的自管 JWT 方案，客户端不读取 refresh 内容 | — |
-| 运行时 | minSdk 26 / targetSdk 34 | 覆盖 Android 8.0+ | — |
+Android 端收敛为**纯单机应用**，不再消费后端 API：
 
-边界：Android 端**只消费**既有 API（auth/wishes/memories/lite-events/media/system），不引入任何服务端变更；构建产物不进入部署单元（仍为静态站点 + api + scheduler 三个运行单元）；FCM 推送、语音/照片直传 UI、新设备登录界面为后续迭代项。
+| 维度 | 选型 | 说明 |
+|------|------|------|
+| 本地数据 | Room 2.6（wishes / lite_events / memories 三表） | 单用户单库，schema 由既有 API 契约直译；状态机约束内建于 Repository |
+| 网络 | Retrofit/OkHttp/TokenStore/CookieJar 移除 | 仅保留 HeartVoiceClient（用户自配的 OpenAI 兼容端点） |
+| 分析 | AnalysisService（心语模型复用） | 愿望理解/一句追问/最小步骤/时机建议，使用期间静默执行；降级语义同后端（degraded 不阻塞） |
+| 时机 | TimingCalculator（timing.py Kotlin 移植） | 六+1 类型同语义；节假日 JSON 随 APK 打包（assets）；以 UT-S03-55~58 为移植验收基准 |
+| 提醒 | CalendarReminder（CalendarProvider） | 事件写入本地日历「未发生事件管理局」，系统到点提醒；未授权/失败降级为仅应用内展示；**邮件通道删除** |
+| 账号 | 无 | 匿名建号/邮箱绑定/登录流程移除；数据可携带由 JSON 导出承担 |
+
+边界：backend/ 与 Web PWA 保持现状（服务端模式仍可用）；Android 不做双模切换、不做端到端加密同步、不做后台自启分析。
+
 
 ## 五、关键机制设计
 

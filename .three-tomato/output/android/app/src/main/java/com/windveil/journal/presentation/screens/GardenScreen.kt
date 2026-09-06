@@ -35,12 +35,26 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.windveil.journal.data.remote.WishCard
-import com.windveil.journal.data.repository.WishRepository
+import com.windveil.journal.data.local.db.WishEntity
+import com.windveil.journal.data.repository.StandaloneRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
+
+/** 卡面时机文案（单机：由 timingType/value 推导）。 */
+fun timingLabelOf(wish: WishEntity): String = when (wish.timingType) {
+    null -> "还没约定时机"
+    "none" -> "你说你会自己想起它"
+    "when_tired" -> "累了的时候再说"
+    "season" -> "正在等待合适的风：" + mapOf("spring" to "春天", "summer" to "夏天", "autumn" to "秋天", "winter" to "入冬").getOrDefault(wish.timingValue, wish.timingValue ?: "")
+    "holiday" -> "正在等待合适的风：" + (wish.timingValue ?: "")
+    "month_day" -> "正在等待合适的风：" + (wish.timingValue ?: "")
+    "after_months" -> (wish.timingValue ?: "") + " 个月后再看"
+    "free_weekend" -> "等一个有空闲的周末"
+    else -> wish.timingValue ?: ""
+}
 
 /** 愿望状态 → 卡面文案（无任何逾期/计数语言，对应 PRD 设计原则）。 */
 fun stateLabel(state: String): String = when (state) {
@@ -55,37 +69,12 @@ fun stateLabel(state: String): String = when (state) {
 
 @HiltViewModel
 class GardenViewModel @Inject constructor(
-    private val wishRepository: WishRepository,
+    repository: StandaloneRepository,
 ) : ViewModel() {
-    val wishes = MutableStateFlow<List<WishCard>>(emptyList())
-    val loading = MutableStateFlow(false)
-    val error = MutableStateFlow<String?>(null)
-    private var nextCursor: String? = null
-
-    fun refresh() {
-        viewModelScope.launch {
-            loading.value = true
-            error.value = null
-            runCatching {
-                val page = wishRepository.list()
-                nextCursor = page.nextCursor
-                page.items
-            }.onSuccess { wishes.value = it }
-                .onFailure { error.value = it.message ?: "打不开了，再试试" }
-            loading.value = false
-        }
-    }
-
-    fun loadMore() {
-        val cursor = nextCursor ?: return
-        viewModelScope.launch {
-            runCatching { wishRepository.list(cursor = cursor) }
-                .onSuccess { page ->
-                    nextCursor = page.nextCursor
-                    wishes.value = wishes.value + page.items
-                }
-        }
-    }
+    /** Room 流：本地库变更自动刷新，无分页（单机量级）。 */
+    val wishes: kotlinx.coroutines.flow.StateFlow<List<WishEntity>> =
+        repository.observeGarden()
+            .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 }
 
 /** S05.1：未发生之地 —— 河流式列表，空状态温柔呈现。 */
@@ -96,11 +85,7 @@ fun GardenScreen(
     viewModel: GardenViewModel = hiltViewModel(),
 ) {
     val wishes by viewModel.wishes.collectAsState()
-    val loading by viewModel.loading.collectAsState()
-    val error by viewModel.error.collectAsState()
     var tab by remember { mutableStateOf(0) }
-
-    LaunchedEffect(Unit) { viewModel.refresh() }
 
     Scaffold(
         floatingActionButton = {
@@ -127,24 +112,15 @@ fun GardenScreen(
                 LiteEventsScreen(embedded = true)
                 return@Scaffold
             }
-            when {
-                loading && wishes.isEmpty() -> CircularProgressIndicator(Modifier.padding(32.dp))
-                wishes.isEmpty() && error == null -> EmptyGarden()
-                else -> LazyColumn(
+            if (wishes.isEmpty()) {
+                EmptyGarden()
+            } else {
+                LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                 ) {
                     items(wishes, key = { it.id }) { wish ->
                         WishCardItem(wish) { onOpenWish(wish.id) }
-                    }
-                    if (error != null) {
-                        item {
-                            Text(
-                                error.orEmpty(),
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.padding(8.dp),
-                            )
-                        }
                     }
                 }
             }
@@ -171,11 +147,11 @@ private fun EmptyGarden() {
 }
 
 @Composable
-private fun WishCardItem(wish: WishCard, onClick: () -> Unit) {
+private fun WishCardItem(wish: WishEntity, onClick: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Column(Modifier.padding(16.dp)) {
             Text(wish.title, style = MaterialTheme.typography.titleMedium)
-            wish.originalTextExcerpt?.let {
+            wish.originalText?.let {
                 Text(
                     it,
                     style = MaterialTheme.typography.bodySmall,
@@ -194,15 +170,8 @@ private fun WishCardItem(wish: WishCard, onClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Text(
-                    wish.timing.label,
+                    timingLabelOf(wish),
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (wish.softDeferred) {
-                Text(
-                    "本周先不打扰你",
-                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

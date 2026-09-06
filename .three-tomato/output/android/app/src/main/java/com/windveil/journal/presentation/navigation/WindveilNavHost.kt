@@ -27,12 +27,10 @@ import com.windveil.journal.presentation.screens.MemoryBookScreen
 import com.windveil.journal.presentation.screens.MemoryPageScreen
 import com.windveil.journal.presentation.screens.SeedWishScreen
 import com.windveil.journal.presentation.screens.SettingsScreen
-import com.windveil.journal.presentation.screens.WelcomeScreen
 import com.windveil.journal.presentation.screens.WishDetailScreen
 
 /** 导航路由（单层扁平结构，避免嵌套 NavHost）。 */
 object Routes {
-    const val WELCOME = "welcome"
     const val HEART_VOICE = "heart_voice"
     const val GARDEN = "garden"
     const val MEMORIES = "memories"
@@ -45,7 +43,7 @@ object Routes {
     fun memoryPage(memoryId: String) = "memory/$memoryId"
 }
 
-/** 底部四 Tab：心语 / 未发生之地 / 已发生之书 / 我的（heart-voice-holiday-timing）。 */
+/** 底部四 Tab：心语 / 未发生之地 / 已发生之书 / 我的。 */
 private val TAB_ROUTES = setOf(Routes.HEART_VOICE, Routes.GARDEN, Routes.MEMORIES, Routes.SETTINGS)
 
 /**
@@ -91,11 +89,6 @@ fun WindveilApp(startDestination: String, navController: NavHostController = rem
         }
     ) { padding ->
         NavHost(nav, startDestination = startDestination, modifier = Modifier.padding(padding)) {
-            composable(Routes.WELCOME) {
-                WelcomeScreen(
-                    onDone = { nav.navigate(Routes.GARDEN) { popUpTo(Routes.WELCOME) { inclusive = true } } }
-                )
-            }
             composable(Routes.GARDEN) {
                 GardenScreen(
                     onSeed = { nav.navigate(Routes.SEED) },
@@ -107,10 +100,7 @@ fun WindveilApp(startDestination: String, navController: NavHostController = rem
                 MemoryBookScreen(onBack = { nav.popBackStack() }, onOpen = { id -> nav.navigate(Routes.memoryPage(id)) })
             }
             composable(Routes.SETTINGS) {
-                SettingsScreen(
-                    onBack = { nav.popBackStack() },
-                    onLoggedOut = { nav.navigate(Routes.WELCOME) { popUpTo(0) } },
-                )
+                SettingsScreen(onBack = { nav.popBackStack() }, onLoggedOut = {})
             }
             composable(Routes.SEED) {
                 SeedWishScreen(

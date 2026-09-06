@@ -95,3 +95,13 @@ object NetworkModule {
         override fun refreshApi(): AuthApi = refreshAuthApi
     })
 }
+
+// standalone-mode：Room 数据库绑定
+@Module
+@InstallIn(SingletonComponent::class)
+object DatabaseModule {
+    @Provides
+    @Singleton
+    fun database(@ApplicationContext context: Context): com.windveil.journal.data.local.db.WindveilDatabase =
+        com.windveil.journal.data.local.db.WindveilDatabase.get(context)
+}

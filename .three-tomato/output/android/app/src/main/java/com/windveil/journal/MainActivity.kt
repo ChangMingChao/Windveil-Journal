@@ -3,44 +3,24 @@ package com.windveil.journal
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.lifecycleScope
-import com.windveil.journal.data.local.TokenStore
 import com.windveil.journal.presentation.navigation.WindveilApp
 import com.windveil.journal.presentation.theme.WindveilTheme
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import javax.inject.Inject
 
+/**
+ * 单机模式入口（standalone-mode）：无账号、无欢迎分流，
+ * 直接进「未发生之地」。数据全部在本地 Room 库。
+ */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    @Inject
-    lateinit var tokenStore: TokenStore
-
-    private var startDestination by mutableStateOf<String?>(null)
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        lifecycleScope.launch {
-            // 有个人空间（access token 曾下发）直接进花园，否则进入首次体验
-            startDestination = if (tokenStore.hasSpace.first()) "garden" else "welcome"
-        }
-        lifecycleScope.launch {
-            // 会话不可恢复（refresh 失效）→ 重建 Activity，冷启动回到欢迎页。
-            // TokenStore 侧已防抖（一次过期只发一次事件），
-            // 这里再兜底：recreate 后的新实例会重新 collect，但事件已被消费不会重放
-            // （SharedFlow 无 replay），残留 OkHttp 请求再触发也过不了防抖标志。
-            tokenStore.sessionExpired.collect { recreate() }
-        }
         setContent {
             WindveilTheme {
-                startDestination?.let { dest ->
-                    WindveilApp(startDestination = dest)
-                }
+                WindveilApp(startDestination = "garden")
             }
         }
     }

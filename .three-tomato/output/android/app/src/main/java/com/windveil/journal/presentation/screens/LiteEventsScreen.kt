@@ -32,52 +32,32 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.windveil.journal.data.remote.LiteEvent
-import com.windveil.journal.data.repository.LiteEventRepository
+import com.windveil.journal.data.local.db.LiteEventEntity
+import com.windveil.journal.data.repository.StandaloneRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class LiteEventsViewModel @Inject constructor(
-    private val liteEventRepository: LiteEventRepository,
+    private val repository: StandaloneRepository,
 ) : ViewModel() {
-    val events = MutableStateFlow<List<LiteEvent>>(emptyList())
-    val error = MutableStateFlow<String?>(null)
-
-    fun refresh() {
-        viewModelScope.launch {
-            runCatching { liteEventRepository.list() }
-                .onSuccess { events.value = it.items }
-                .onFailure { error.value = it.message }
-        }
-    }
+    /** Room 流：本地库变更自动刷新。 */
+    val events = repository.observeOpenLiteEvents()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun create(text: String, onCreated: () -> Unit) {
         if (text.isBlank() || text.length > 200) return
         viewModelScope.launch {
-            runCatching { liteEventRepository.create(text) }
-                .onSuccess { onCreated() }
-                .onFailure { error.value = it.message }
+            repository.createLiteEvent(text)
+            onCreated()
         }
     }
 
-    fun markDone(eventId: String) {
-        viewModelScope.launch {
-            runCatching { liteEventRepository.markDone(eventId) }
-                .onSuccess { refresh() }
-                .onFailure { error.value = it.message }
-        }
-    }
-
-    fun delete(eventId: String) {
-        viewModelScope.launch {
-            runCatching { liteEventRepository.delete(eventId) }
-                .onSuccess { refresh() }
-                .onFailure { error.value = it.message }
-        }
-    }
+    fun markDone(eventId: String) = viewModelScope.launch { repository.markLiteEventDone(eventId) }
+    fun delete(eventId: String) = viewModelScope.launch { repository.deleteLiteEvent(eventId) }
 }
 
 /** S09：先记一下并随手划掉 —— 无 Agent、无提醒路径、不占提醒额度。 */
@@ -88,10 +68,7 @@ fun LiteEventsScreen(
     viewModel: LiteEventsViewModel = hiltViewModel(),
 ) {
     val events by viewModel.events.collectAsState()
-    val error by viewModel.error.collectAsState()
     var text by remember { mutableStateOf("") }
-
-    LaunchedEffect(Unit) { viewModel.refresh() }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         if (!embedded) {
@@ -143,6 +120,5 @@ fun LiteEventsScreen(
                 }
             }
         }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
 }

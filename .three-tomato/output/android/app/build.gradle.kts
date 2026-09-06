@@ -74,6 +74,13 @@ dependencies {
     // 图片：Coil
     implementation("io.coil-kt:coil-compose:2.5.0")
 
+    // 单机模式：Room 本地库
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
+
+    // 协程 Play services 不需要；日历走 ContentResolver
+
     // 单元测试（include_tests: true）
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
