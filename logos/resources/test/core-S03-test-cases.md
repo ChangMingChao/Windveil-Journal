@@ -166,15 +166,26 @@
 |----|------|------|---------|---------|---------|
 | ST-S03-24 | 声明城市后建议理由可引用天气 | 架构 5.8 + core-05 增补 | 声明 location=杭州；mock 天气返回「未来两周有雨」；LLM mock 理由引用天气 | 生成建议 → 断言 | 建议正常产出；确认后提醒链路与既有完全一致（outbox 行为不变） |
 
-## MODIFIED — 三、覆盖度校验
+> 上游：`../api/wishes.yaml` TimingInput(holiday) 与 GET /holidays
 
-> 在原清单末尾追加：
+### 1.7.1 holiday 计算与枚举端点
+
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S03-55 | holiday 多选取最近到来的匹配日 | heart-voice-holiday-timing | 样例数据：国庆节 2026-10-01、元旦 2027-01-01 | plan_timing(holiday, [国庆节,元旦]) | timing_value=国庆节；next_trigger_at 为服务端按 timezone 计算的 10-01 09:00；occurrence= holiday:国庆节:2026-10-01 |
+| UT-S03-56 | holidays 为空或缺参 → TIMING_INVALID | heart-voice-holiday-timing | 同样例 | plan_timing(holiday) / holidays=[] | 抛 TimingError（422 TIMING_INVALID） |
+| UT-S03-57 | 所选名称无匹配（缺年份）→ TIMING_INVALID | heart-voice-holiday-timing | 同样例（不含该名称） | plan_timing(holiday, [不存在的节]) | 抛 TimingError，不做任何猜测 |
+| UT-S03-58 | GET /holidays 返回去重名与明细 | heart-voice-holiday-timing | 同样例 | get_holidays(year=2026) | available=true；names=[国庆节,元旦]；items 按 date 升序含 date+name；缺年份时 available=false、names/items 为空 |
+
+实现：backend/tests/test_holiday_timing.py（已通过 5/5）
+
+### 2.7 覆盖度校验增补（weather-data-source）
+
 
 - [x] weather-data-source 增量（5 个）：UT-S03-49~53 全部实现；ST-S03-24 为全链路场景
 
-## MODIFIED — 四、验收条件追溯
+### 2.8 验收条件追溯增补（weather-data-source）
 
-> 在原表末尾追加：
 
 | AC ID | 验收条件（weather-data-source） | 覆盖用例 |
 |-------|-------------------------------|---------|
