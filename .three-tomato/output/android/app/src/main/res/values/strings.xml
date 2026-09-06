@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">未发生事件管理局</string>
+    <string name="welcome_title">为那些还没发生、但值得被认真对待的事，留一盏灯。</string>
+    <string name="welcome_start">开始</string>
+    <string name="garden_title">未发生之地</string>
+    <string name="seed_hint">想到一件想在未来发生的事……</string>
+    <string name="seed_action">种下它</string>
+    <string name="lite_hint">先记一下（今晚吃什么、周末取快递）</string>
+    <string name="timing_ask">为它约定属于它的时机</string>
+    <string name="memory_book_title">已发生之书</string>
+    <string name="settings_title">它记得我什么</string>
+    <string name="tab_garden">未发生之地</string>
+    <string name="tab_memories">已发生之书</string>
+    <string name="tab_lite">随手记</string>
+    <string name="tab_settings">我的</string>
+</resources>

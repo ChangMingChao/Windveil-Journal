@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 纸色底 + 一盏灯：应用图标前景 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#6B8F71"
+        android:pathData="M54,30 C48,42 44,48 44,56 C44,64 48,70 54,70 C60,70 64,64 64,56 C64,48 60,42 54,30 Z" />
+    <path
+        android:fillColor="#A78A6F"
+        android:pathData="M48,74 L60,74 L58,80 L50,80 Z" />
+</vector>
