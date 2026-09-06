@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -26,6 +27,9 @@ class TokenStore @Inject constructor(@ApplicationContext private val context: Co
     private val accessTokenKey = stringPreferencesKey("access_token")
     private val hasSpaceKey = booleanPreferencesKey("has_space")
 
+    // 会话过期通知的进程内防抖标志（401 风暴下只发一次）
+    private val expiryNotified = AtomicBoolean(false)
+
     val accessToken: Flow<String?> = context.dataStore.data.map { it[accessTokenKey] }
 
     /** 是否已在本机建立过个人空间（决定冷启动进 welcome 还是 garden）。 */
@@ -35,10 +39,16 @@ class TokenStore @Inject constructor(@ApplicationContext private val context: Co
     val sessionExpired = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     fun notifySessionExpired() {
-        sessionExpired.tryEmit(Unit)
+        // 防抖：并发 401 只发一次；recreate 后残留请求再进来也会被拦住，
+        // 否则 401 → 清会话 → recreate → 残留请求再 401 → 又 recreate，页面无限闪烁
+        if (expiryNotified.compareAndSet(false, true)) {
+            sessionExpired.tryEmit(Unit)
+        }
     }
 
+    /** 建号/登录成功后重置防抖标志，下一次会话过期仍能通知。 */
     suspend fun save(access: String) {
+        expiryNotified.set(false)
         context.dataStore.edit {
             it[accessTokenKey] = access
             it[hasSpaceKey] = true

@@ -30,7 +30,10 @@ class MainActivity : ComponentActivity() {
             startDestination = if (tokenStore.hasSpace.first()) "garden" else "welcome"
         }
         lifecycleScope.launch {
-            // 会话不可恢复（refresh 失效）→ 重建 Activity，冷启动回到欢迎页
+            // 会话不可恢复（refresh 失效）→ 重建 Activity，冷启动回到欢迎页。
+            // TokenStore 侧已防抖（一次过期只发一次事件），
+            // 这里再兜底：recreate 后的新实例会重新 collect，但事件已被消费不会重放
+            // （SharedFlow 无 replay），残留 OkHttp 请求再触发也过不了防抖标志。
             tokenStore.sessionExpired.collect { recreate() }
         }
         setContent {
