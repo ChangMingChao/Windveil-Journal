@@ -37,16 +37,41 @@ import com.windveil.journal.data.remote.HeartVoiceClient
 import com.windveil.journal.data.repository.StandaloneRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/** 心语系统提示词：识别「对未来安排有用的事实」，无关不记。 */
-private const val SYSTEM_PROMPT = """你是「未发生事件管理局」的心语助手。这个应用帮用户保存那些还没发生、但值得被认真对待的事。
-你的任务：分析用户这条消息，判断是否包含对未来安排有用的事实（时间安排、计划、想去的地方、想做的事、偏好、承诺等）。
-- 有用：lite_event 用一句不超过 30 字的中性记录概括（例如用户说「我明天做点什么好呢」，隐含明天有空，可记为「明天可能有空」）。
-- 无关（闲聊、情绪抒发、与未来安排无关）：useful=false，lite_event 给 null。
-- 语气温柔，不催促，不评判。禁止出现「任务」「逾期」「未完成」等词。
-只输出 JSON，不要输出其他内容：{"reply":"给你的回应（1-2 句）","useful":true/false,"lite_event":"记录内容或 null"}"""
+/**
+ * 心语两阶段设计（用户 2026-09-06 反馈）：
+ * 阶段1 意图分类：用户在「提问求建议」还是在「陈述可记录的事实」？
+ *   - 提问（如「明天中午吃什么」）→ 检索个人记忆，基于历史给建议（不记录）
+ *   - 陈述（如「我想去吃自助」）→ 记为轻事件
+ * 阶段2 记录或建议：提问时注入个人上下文（轻事件/愿望标题），模型引用记忆给出带排序的建议。
+ */
+private const val CLASSIFY_PROMPT = """你是「未发生事件管理局」的意图分类器。判断用户这条消息属于哪类：
+- "ask"：在提问、征求建议（吃什么、做什么、去哪里、怎么选……）——用户想要基于他的历史记录的建议
+- "record"：在陈述一个事实、计划、想去的地方、偏好或承诺——值得记下来供以后参考
+- "chat"：纯闲聊或情绪抒发，与安排无关
+
+只输出 JSON：{"intent":"ask 或 record 或 chat"}"""
+
+private const val RECORD_PROMPT = """你是「未发生事件管理局」的心语助手。用户陈述了一件值得记下的事。
+用一句不超过 30 字的中性记录概括它（例如「我想去吃自助」→「想去吃自助」）。
+语气温柔不评判，禁止出现「任务」「逾期」「未完成」等词。
+只输出 JSON：{"reply":"给你的回应（1 句）","lite_event":"记录内容"}"""
+
+private fun askPrompt(contextBlock: String) = """你是「未发生事件管理局」的心语助手。用户在征求建议，请基于他的个人记录回答。
+
+用户的个人记录（轻事件=随手的记录，愿望=还没发生但想做的事）：
+$contextBlock
+
+回答要求：
+- 优先从记录里找依据来建议（如记录过「想吃自助」就提示可以考虑）；引用时说「你某天记过/你想过……」
+- 如果记录之间存在冲突（如既记过「想吃自助」又记过「在减肥」），温柔地都摆出来并给出排序与理由，不评判
+- 没有相关记录就直接正常回答，并说明「记录里还没找到相关的」
+- 语气温柔不催促，禁止出现「任务」「逾期」「未完成」等词
+- 回答控制在 4 句以内
+直接输出建议文本，不要 JSON。"""
 
 data class HeartVoiceMessage(
     val role: String, // user | assistant
@@ -86,29 +111,82 @@ class HeartVoiceViewModel @Inject constructor(
         loading.value = true
         error.value = null
         viewModelScope.launch {
-            runCatching {
-                val history = messages.value.map { HeartVoiceClient.Turn(it.role, it.text) }
-                val content = heartVoiceClient.chat(cfg, SYSTEM_PROMPT, history)
-                val cleaned = content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-                Gson().fromJson(cleaned, HeartVoiceResult::class.java)
-            }.onSuccess { result ->
-                var recorded: String? = null
-                if (result.useful && !result.liteEvent.isNullOrBlank()) {
-                    // 有用信息自动记为本地轻事件（单机：写 Room）
-                    runCatching { repository.createLiteEvent(result.liteEvent.take(200)) }
-                        .onSuccess { recorded = result.liteEvent }
+            // 阶段1：意图分类
+            val intent = runCatching {
+                val content = heartVoiceClient.chat(cfg, CLASSIFY_PROMPT, listOf(HeartVoiceClient.Turn("user", trimmed)))
+                Gson().fromJson(cleanJson(content), IntentResult::class.java).intent
+            }.getOrNull() ?: "chat"
+
+            when (intent) {
+                "record" -> {
+                    // 阶段2a：记录
+                    runCatching {
+                        val content = heartVoiceClient.chat(cfg, RECORD_PROMPT, listOf(HeartVoiceClient.Turn("user", trimmed)))
+                        val result = Gson().fromJson(cleanJson(content), HeartVoiceResult::class.java)
+                        var recorded: String? = null
+                        if (!result.liteEvent.isNullOrBlank()) {
+                            runCatching { repository.createLiteEvent(result.liteEvent.take(200)) }
+                                .onSuccess { recorded = result.liteEvent }
+                        }
+                        messages.value = messages.value + HeartVoiceMessage(
+                            role = "assistant",
+                            text = result.reply ?: "嗯，我记下了。",
+                            recorded = recorded,
+                        )
+                    }.onFailure { e ->
+                        messages.value = messages.value + HeartVoiceMessage("assistant", "这会儿没连上模型，等一下再试试。")
+                        error.value = e.message
+                    }
                 }
-                messages.value = messages.value + HeartVoiceMessage(
-                    role = "assistant",
-                    text = result.reply ?: "嗯，我听到了。",
-                    recorded = recorded,
-                )
-            }.onFailure { e ->
-                messages.value = messages.value + HeartVoiceMessage("assistant", "这会儿没连上模型，等一下再试试。")
-                error.value = e.message
+                "ask" -> {
+                    // 阶段2b：检索个人记忆（轻事件 + 愿望标题）作为上下文回答
+                    val contextBlock = buildMemoryContext()
+                    runCatching {
+                        val reply = heartVoiceClient.chat(cfg, askPrompt(contextBlock), listOf(HeartVoiceClient.Turn("user", trimmed)))
+                        messages.value = messages.value + HeartVoiceMessage("assistant", reply.trim())
+                    }.onFailure { e ->
+                        messages.value = messages.value + HeartVoiceMessage("assistant", "这会儿没连上模型，等一下再试试。")
+                        error.value = e.message
+                    }
+                }
+                else -> {
+                    // chat：温柔接话，不记录
+                    runCatching {
+                        val reply = heartVoiceClient.chat(
+                            cfg,
+                            "你是「未发生事件管理局」的温柔陪伴者。用户在闲聊或抒发情绪，温柔回应 1-2 句，不评判不催促。直接输出回应文本。",
+                            listOf(HeartVoiceClient.Turn("user", trimmed)),
+                        )
+                        messages.value = messages.value + HeartVoiceMessage("assistant", reply.trim())
+                    }.onFailure { e ->
+                        messages.value = messages.value + HeartVoiceMessage("assistant", "这会儿没连上模型，等一下再试试。")
+                        error.value = e.message
+                    }
+                }
             }
             loading.value = false
         }
+    }
+
+    private fun cleanJson(content: String): String =
+        content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+
+    /** 个人记忆上下文：open 轻事件（最近 20 条）+ 未完成愿望标题（最近 20 条）。 */
+    private suspend fun buildMemoryContext(): String {
+        val sb = StringBuilder()
+        val liteEvents = repository.observeOpenLiteEvents().first()
+        if (liteEvents.isNotEmpty()) {
+            sb.appendLine("【随手记】")
+            liteEvents.take(20).forEach { sb.appendLine("- ${it.text}") }
+        }
+        val wishes = repository.observeGarden().first()
+            .filter { it.state != "let_go" }
+        if (wishes.isNotEmpty()) {
+            sb.appendLine("【愿望】")
+            wishes.take(20).forEach { sb.appendLine("- ${it.title}") }
+        }
+        if (sb.isEmpty()) sb.append("（还没有任何记录）")
+        return sb.toString()
     }
 }
 
@@ -200,6 +278,8 @@ fun HeartVoiceScreen(viewModel: HeartVoiceViewModel = hiltViewModel()) {
         }
     }
 }
+
+private data class IntentResult(val intent: String = "chat")
 
 /** 心语 JSON 结果（模型返回）。 */
 data class HeartVoiceResult(
