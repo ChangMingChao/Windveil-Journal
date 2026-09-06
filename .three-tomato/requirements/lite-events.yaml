@@ -1,0 +1,191 @@
+openapi: 3.1.0
+# delta — api/lite-events.yaml（lightweight-events，新增文件）
+#
+# 合并目标：logos/resources/api/lite-events.yaml（全新文件）
+# 来源：S09 时序图（core-S09-lite-events.md）。四条贯穿约定沿用全域：
+#   1. 越权访问返回 404 而非 403（S05 EX-3.1 同策略）
+#   2. 响应不含任何计数字段
+#   3. 轻事件在结构上无提醒路径（无触发字段、不在扫描集合）
+#   4. text 应用层 AES-256-GCM 加密，数据库只见密文
+
+info:
+  title: "未发生事件管理局 — 轻量事件 API"
+  version: "0.1.0"
+  description: |
+    来源：S09 时序图（core-S09-lite-events.md）。轻事件是「还不值得变成愿望的念头」：
+    纯记录、无 Agent、无提醒路径、不占每周提醒额度。四端点刻意收窄，任何扩展
+    （提醒、理解、建议）都是行为变更，需要新提案。
+
+servers:
+  - url: "https://{host}/api/v1"
+    variables:
+      host:
+        default: "localhost:8000"
+security:
+  - bearerAuth: []
+tags:
+  - name: lite-events
+    description: "轻量事件的记录与随手划掉（S09）"
+
+paths:
+  /lite-events:
+    post:
+      operationId: createLiteEvent
+      tags: [lite-events]
+      summary: "先记一下"
+      description: "来源：S09 Step 8 → Step 13。纯写入：不调用 Agent、不产生提醒、不影响任何愿望。前端空内容禁用保存，服务端二次校验（双层防御）。"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  description: "一句话轻意图，如「今晚吃火锅」"
+      responses:
+        '201':
+          description: "已记下；响应为完整 LiteEvent（保存确认，text 原样回显）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LiteEvent' }
+        '422':
+          description: "text 为空 / 全空白 / 超 200 字（VALIDATION_FAILED，EX-9.1）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401':
+          description: "未认证（UNAUTHENTICATED）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    get:
+      operationId: listLiteEvents
+      tags: [lite-events]
+      summary: "轻事件列表"
+      description: "来源：S09 Step 3 → Step 7。默认只返回 open 状态，最近在上，无分页（轻事件列表不设翻页，前端最多渲染 8 条）；响应不含任何计数字段。"
+      parameters:
+        - name: include_done
+          in: query
+          schema: { type: boolean, default: false }
+          description: "true 时附带已划掉的条目（追溯用）"
+      responses:
+        '200':
+          description: "轻事件列表"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/LiteEvent' }
+        '401':
+          description: "未认证（UNAUTHENTICATED）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /lite-events/{event_id}/done:
+    parameters:
+      - name: event_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: markLiteEventDone
+      tags: [lite-events]
+      summary: "划掉了"
+      description: "来源：S09 Step 14 → Step 18。置 status=done 并记 closed_at（CHECK 配对）；默认列表从此不含它。无确认步骤。"
+      responses:
+        '200':
+          description: "已划掉"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LiteEvent' }
+        '409':
+          description: "该条已划掉或已收走（LITE_EVENT_ALREADY_CLOSED，EX-14.1 幂等保护）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: "不存在或不属于当前用户（LITE_EVENT_NOT_FOUND）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401':
+          description: "未认证（UNAUTHENTICATED）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /lite-events/{event_id}:
+    parameters:
+      - name: event_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      operationId: deleteLiteEvent
+      tags: [lite-events]
+      summary: "收走（硬删除）"
+      description: "来源：S09 Step 19 → Step 22。硬删除不可恢复；无确认步骤（轻事件不值得打断用户）。不出现在任何导出或统计中。"
+      responses:
+        '204':
+          description: "已收走"
+        '404':
+          description: "不存在、已删除或不属于当前用户（LITE_EVENT_NOT_FOUND，EX-22.1）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401':
+          description: "未认证（UNAUTHENTICATED）"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    LiteEvent:
+      type: object
+      required: [id, text, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        text:
+          type: string
+          description: "服务端解密后的明文，仅本人可见"
+        status:
+          type: string
+          enum: [open, done]
+          description: "open 已记下还在列表；done 已划掉（默认列表不含，include_done 可见）"
+        created_at: { type: string, format: date-time }
+        closed_at:
+          type: [string, "null"]
+          format: date-time
+          description: "划掉时间；open 时为 null（与 status 由数据库 CHECK 配对约束保证一致）"
+
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: "机器可读错误码，如 LITE_EVENT_NOT_FOUND"
+        message:
+          type: string
+          description: "人类可读描述，面向用户的文案禁止出现「任务」「逾期」「未完成」等词"
+        details:
+          type: object
+          additionalProperties: true
+          description: "字段级校验错误等附加信息"
