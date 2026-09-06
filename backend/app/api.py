@@ -508,6 +508,27 @@ async def put_timing(wish_id: UUID, payload: dict, user_id: CurrentUser) -> Wish
         raise _err(exc) from exc
 
 
+@router.get("/holidays")
+async def get_holidays(year: int | None = None, user_id: CurrentUser = None) -> dict:
+    """法定节假日枚举（heart-voice-holiday-timing）。
+
+    供客户端「自己选时机」的节假日多选器：names 为去重节假日名，items 为
+    date+name 明细。数据来自内置文件；缺年份返回空表（available=false），
+    客户端据此提示「节假日数据暂不可用」，不做任何猜测。
+    """
+    from app.clock import clock
+    from app.holidays import holiday_items, holiday_names
+
+    target = year or clock.now().year
+    items = holiday_items(target)
+    return {
+        "year": target,
+        "available": bool(items),
+        "names": holiday_names(target) if items else [],
+        "items": items,
+    }
+
+
 @router.post("/wishes/{wish_id}/ready", response_model=WishDetail)
 async def post_ready(wish_id: UUID, user_id: CurrentUser) -> WishDetail:
     """来源：S03 Step 20 → Step 22、S04 Step 2 → Step 4。"""

@@ -413,6 +413,7 @@ async def set_timing(
             season=payload.get("season"),
             month_day=payload.get("month_day"),
             after_months=payload.get("after_months"),
+            holidays=payload.get("holidays"),
         )
     except (TimingError, ValueError) as exc:
         raise DomainError(422, "TIMING_INVALID", "这个时机我还没法记下来") from exc

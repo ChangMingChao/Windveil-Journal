@@ -97,3 +97,43 @@ def upcoming_facts(today, limit: int = 3) -> list[str]:
 def reset_cache() -> None:
     """测试注入不同数据目录后清缓存。"""
     _cache.clear()
+
+
+def next_holiday_occurrence(names, today):
+    """在已加载数据的年份（当年 + 次年）里，找 names 中最早到来的节假日日期。
+
+    返回 (date, 名称)；所选名称在数据中都找不到（含缺年份）时返回 None——
+    调用方按 TIMING_INVALID 处理（显式选择的节假日算不出日期，宁可拒绝不可瞎猜）。
+    """
+    from datetime import date as _date
+
+    wanted = set(names)
+    for year in (today.year, today.year + 1):
+        data = load_year(year)
+        hits = []
+        for day_str, name in data["holidays"].items():
+            if name in wanted:
+                day = _date.fromisoformat(day_str)
+                if day >= today:
+                    hits.append((day, name))
+        if hits:
+            return min(hits)
+    return None
+
+
+def holiday_names(year: int) -> list[str]:
+    """某年数据中出现的节假日名（去重、按首次出现排序）。供 /holidays 枚举。"""
+    seen: list[str] = []
+    for _day, name in sorted(load_year(year)["holidays"].items()):
+        if name not in seen:
+            seen.append(name)
+    return seen
+
+
+def holiday_items(year: int) -> list[dict]:
+    """某年全部节假日条目（date + name，按日期升序）。数据缺失返回空表。"""
+    data = load_year(year)
+    return [
+        {"date": day, "name": name}
+        for day, name in sorted(data["holidays"].items())
+    ]

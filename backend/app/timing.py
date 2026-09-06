@@ -54,6 +54,7 @@ def _add_months(day: date, months: int) -> date:
 def plan_timing(
     *, timing_type: str, timezone: str, season: str | None = None,
     month_day: str | None = None, after_months: int | None = None,
+    holidays: list[str] | None = None,
 ) -> TimingPlan:
     tz = ZoneInfo(timezone)
     now_local = clock.now().astimezone(tz)
@@ -101,6 +102,22 @@ def plan_timing(
         return TimingPlan(
             "after_months", str(after_months), "time", when, f"after_months:{target.isoformat()}"
         )
+
+    if timing_type == "holiday":
+        # 「法定节假日」（heart-voice-holiday-timing）：用户从内置数据枚举中
+        # 多选节假日名，服务端取最近到来的一个匹配日计算触发时刻。
+        # 数据缺年份或所选名称无匹配 → TIMING_INVALID（显式选择不可瞎猜）。
+        from app.holidays import next_holiday_occurrence
+
+        wanted = [h for h in (holidays or []) if h]
+        if not wanted:
+            raise TimingError("holidays is required")
+        found = next_holiday_occurrence(wanted, today)
+        if found is None:
+            raise TimingError("no upcoming holiday matched in holiday data")
+        target, name = found
+        when = _local_at(tz, target)
+        return TimingPlan("holiday", name, "time", when, f"holiday:{name}:{target.isoformat()}")
 
     if timing_type == "free_weekend":
         # 「空闲周末」= 下一个非调休的周末日（holiday-aware-timing）：
