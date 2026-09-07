@@ -45,6 +45,9 @@ interface LiteEventDao {
     @Query("SELECT * FROM lite_events WHERE status = 'open' ORDER BY createdAt DESC")
     fun observeOpen(): Flow<List<LiteEventEntity>>
 
+    @Query("SELECT * FROM lite_events WHERE status = 'done' ORDER BY closedAt DESC")
+    fun observeDone(): Flow<List<LiteEventEntity>>
+
     @Query("UPDATE lite_events SET status = 'done', closedAt = :closedAt WHERE id = :id")
     suspend fun markDone(id: String, closedAt: String)
 

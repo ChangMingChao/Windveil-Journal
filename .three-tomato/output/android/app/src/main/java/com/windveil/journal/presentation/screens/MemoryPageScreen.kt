@@ -62,12 +62,13 @@ class MemoryPageViewModel @Inject constructor(
         }
     }
 
-    fun publish(memoryId: String, title: String?, cause: String?, process: String?, lastLine: String?) {
+    fun publish(memoryId: String, title: String?, cause: String?, process: String?, lastLine: String?, onPublished: () -> Unit = {}) {
         viewModelScope.launch {
             loading.value = true
             // 收进书里 = 保存编辑 + 发布（简化：去掉单独的保存按钮）
             repository.updateMemory(memoryId, title, cause, process, lastLine)
             runCatching { repository.publishMemory(memoryId) }
+                .onSuccess { onPublished() }
                 .onFailure { error.value = it.message }
             loading.value = false
         }
@@ -79,6 +80,7 @@ class MemoryPageViewModel @Inject constructor(
 fun MemoryPageScreen(
     memoryId: String,
     onBack: () -> Unit,
+    onPublished: () -> Unit = {},
     viewModel: MemoryPageViewModel = hiltViewModel(),
 ) {
     val memory by viewModel.memory.collectAsState()
@@ -121,7 +123,7 @@ fun MemoryPageScreen(
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (current.status == "draft") {
-                    Button(onClick = { viewModel.publish(memoryId, title, cause, process, lastLine) }) { Text("收进书里") }
+                    Button(onClick = { viewModel.publish(memoryId, title, cause, process, lastLine, onPublished) }) { Text("收进书里") }
                 } else {
                     Text("已入册", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }

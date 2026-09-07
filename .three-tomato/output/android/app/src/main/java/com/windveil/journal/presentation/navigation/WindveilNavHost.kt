@@ -127,6 +127,10 @@ fun WindveilApp(startDestination: String, navController: NavHostController = rem
                 MemoryPageScreen(
                     memoryId = it.arguments?.getString("memoryId").orEmpty(),
                     onBack = { nav.popBackStack() },
+                    onPublished = {
+                        // 收进书里后直接跳到已发生之书（弹回两层：memory -> wish/garden）
+                        nav.popBackStack(Routes.MEMORIES, false)
+                    },
                 )
             }
         }

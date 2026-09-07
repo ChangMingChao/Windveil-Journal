@@ -46,6 +46,7 @@ class StandaloneRepository @Inject constructor(
     fun observeGarden(): Flow<List<WishEntity>> = wishDao.observeGarden()
     fun observeWish(id: String): Flow<WishEntity?> = wishDao.observe(id)
     fun observeOpenLiteEvents(): Flow<List<LiteEventEntity>> = liteDao.observeOpen()
+    fun observeDoneLiteEvents(): Flow<List<LiteEventEntity>> = liteDao.observeDone()
     fun observePublishedMemories(): Flow<List<MemoryEntity>> = memoryDao.observePublished()
     fun observeMemory(id: String): Flow<MemoryEntity?> = memoryDao.observe(id)
     fun observeLivedPages(): Flow<Int> = memoryDao.observeLivedPages()

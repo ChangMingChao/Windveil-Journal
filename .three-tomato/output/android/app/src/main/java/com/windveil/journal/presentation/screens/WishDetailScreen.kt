@@ -1,6 +1,7 @@
 package com.windveil.journal.presentation.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -313,44 +314,59 @@ private fun TimingSection(
 
                 if (holidaysAvailable && holidayNames.isNotEmpty()) {
                     Text(
-                        "法定节假日（可多选）：",
+                        "法定节假日（下拉选择）：",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    val selected = remember { mutableStateOf(setOf<String>()) }
-                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        holidayNames.forEach { name ->
-                            val checked = name in selected.value
-                            FilterChip(
-                                selected = checked,
-                                onClick = {
-                                    selected.value = if (checked) selected.value - name else selected.value + name
-                                },
-                                label = { Text(name) },
-                            )
+                    var holidayExpanded by remember { mutableStateOf(false) }
+                    var selectedHoliday by remember { mutableStateOf("") }
+                    Box {
+                        OutlinedButton(onClick = { holidayExpanded = true }) {
+                            Text(selectedHoliday.ifBlank { "选一个节假日" })
+                        }
+                        androidx.compose.material3.DropdownMenu(
+                            expanded = holidayExpanded,
+                            onDismissRequest = { holidayExpanded = false },
+                        ) {
+                            holidayNames.forEach { name ->
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(name) },
+                                    onClick = {
+                                        selectedHoliday = name
+                                        holidayExpanded = false
+                                    },
+                                )
+                            }
                         }
                     }
                     Button(
-                        onClick = { requestSet { wc -> viewModel.setTiming(wishId, "holiday", holidays = selected.value.toList(), writeCalendar = wc) } },
-                        enabled = selected.value.isNotEmpty(),
+                        onClick = { requestSet { wc -> viewModel.setTiming(wishId, "holiday", holidays = listOf(selectedHoliday), writeCalendar = wc) } },
+                        enabled = selectedHoliday.isNotBlank(),
                     ) { Text("就这样定") }
                 }
 
-                var dateText by remember { mutableStateOf("") }
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = dateText,
-                        onValueChange = { dateText = it },
-                        label = { Text("具体年月日（YYYY-MM-DD）") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Button(
-                        onClick = { requestSet { wc -> viewModel.setTiming(wishId, "month_day", monthDay = dateText.trim(), writeCalendar = wc) } },
-                        enabled = dateText.matches(Regex("\\d{4}-\\d{2}-\\d{2}")),
-                        modifier = Modifier.padding(start = 8.dp),
-                    ) { Text("定在这天") }
+                // 具体日期：年 / 月 / 日 三个下拉
+                var yearSel by remember { mutableStateOf("") }
+                var monthSel by remember { mutableStateOf("") }
+                var daySel by remember { mutableStateOf("") }
+                val currentYear = java.time.LocalDate.now().year
+                val years = (currentYear..(currentYear + 5)).map { it.toString() }
+                val months = (1..12).map { "%02d".format(it) }
+                val daysMax = if (monthSel.isNotBlank() && yearSel.isNotBlank()) {
+                    java.time.YearMonth.of(yearSel.toInt(), monthSel.toInt()).lengthOfMonth()
+                } else 31
+                val days = (1..daysMax).map { "%02d".format(it) }
+
+                Text("具体日期（下拉选择）：", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    SimpleDropdown(label = "年", options = years, selected = yearSel, onSelect = { yearSel = it; daySel = "" }, modifier = Modifier.weight(1.2f))
+                    SimpleDropdown(label = "月", options = months, selected = monthSel, onSelect = { monthSel = it; daySel = "" }, modifier = Modifier.weight(1f))
+                    SimpleDropdown(label = "日", options = days, selected = daySel, onSelect = { daySel = it }, modifier = Modifier.weight(1f))
                 }
+                Button(
+                    onClick = { requestSet { wc -> viewModel.setTiming(wishId, "month_day", monthDay = "$yearSel-$monthSel-$daySel", writeCalendar = wc) } },
+                    enabled = yearSel.isNotBlank() && monthSel.isNotBlank() && daySel.isNotBlank(),
+                ) { Text("定在这天") }
             }
         }
     }
@@ -446,6 +462,31 @@ private fun TidySection(
                 onClick = { if (confirmDelete) viewModel.deletePermanently(wishId) { onBack() } else confirmDelete = true },
             ) {
                 Text(if (confirmDelete) "再点一次：彻底删除，不可恢复" else "彻底删除")
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun SimpleDropdown(
+    label: String,
+    options: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier) {
+        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+            Text(selected.ifBlank { label }, maxLines = 1)
+        }
+        androidx.compose.material3.DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { opt ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(opt) },
+                    onClick = { onSelect(opt); expanded = false },
+                )
             }
         }
     }

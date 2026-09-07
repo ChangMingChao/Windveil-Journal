@@ -154,7 +154,7 @@ fun LiteEventsScreen(
 }
 
 
-private fun parsePhotos(json: String): List<String> = runCatching {
+internal fun parsePhotos(json: String): List<String> = runCatching {
     com.google.gson.Gson().fromJson(
         json,
         object : com.google.gson.reflect.TypeToken<List<String>>() {}.type,
@@ -162,7 +162,7 @@ private fun parsePhotos(json: String): List<String> = runCatching {
 }.getOrDefault(emptyList())
 
 @Composable
-private fun LiteEventEditDialog(
+internal fun LiteEventEditDialog(
     initialText: String,
     initialNote: String,
     initialPhotos: String?,
