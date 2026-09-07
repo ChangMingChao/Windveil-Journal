@@ -275,7 +275,7 @@ private fun RemindSection(viewModel: SettingsViewModel, context: android.content
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("系统日历提醒", style = MaterialTheme.typography.titleSmall)
             Text(
-                if (granted) "已授权：约定时机时会写入系统日历（「未发生事件管理局」日历），到点由系统提醒。"
+                if (granted) "已授权：约定时机时会写入系统日历（「风起簿」日历），到点由系统提醒。"
                 else "尚未授权日历权限。授权后，约定时机的事件会写入系统日历，到点由系统提醒；不授权也能用，只是提醒只在打开应用时看到。",
                 style = MaterialTheme.typography.bodyMedium,
             )

@@ -26,7 +26,7 @@ class AnalysisService @Inject constructor(
         val suggestedTiming: String?, // 时机建议的一句话理由（可选）
     )
 
-    private fun understandingPrompt(wishText: String): String = """你是「未发生事件管理局」的温柔分析者。用户写下一件想在未来发生的事：
+    private fun understandingPrompt(wishText: String): String = """你是「风起簿」的温柔分析者。用户写下一件想在未来发生的事：
 "$wishText"
 
 分析它并只输出 JSON（不要其他内容）：
@@ -109,7 +109,7 @@ class AnalysisService @Inject constructor(
      */
     suspend fun extractPreferences(config: LlmConfig?, userText: String): List<PreferenceDraft> {
         if (config?.usable != true) return emptyList()
-        val prompt = """你是「未发生事件管理局」的画像提炼器。用户刚说了："${userText.take(200)}"
+        val prompt = """你是「风起簿」的画像提炼器。用户刚说了："${userText.take(200)}"
 
 从中提炼关于用户的长期偏好/习惯/时间安排（有空时间、运动偏好、饮食倾向、作息等）。
 - 只有明确涉及才提炼，没有就给空数组；一次最多 2 条
@@ -139,7 +139,7 @@ class AnalysisService @Inject constructor(
     /** 愿望详情页的自由对话（chat/推进/疲惫信号由调用方按语义处理）。返回 null = 降级。 */
     suspend fun chat(config: LlmConfig?, wishTitle: String, userText: String): String? {
         if (config?.usable != true) return null
-        val prompt = """你是「未发生事件管理局」的陪伴者。用户有一个愿望：「$wishTitle」。
+        val prompt = """你是「风起簿」的陪伴者。用户有一个愿望：「$wishTitle」。
 用户对你说：「$userText」
 温柔回应（1-3 句），不催促、不评判；如果用户表达了疲惫，认可他的感受并提议把时机改成「累了的时候」；禁止出现「任务」「逾期」「未完成」等词。直接输出回应文本，不要 JSON。"""
         return runCatching {

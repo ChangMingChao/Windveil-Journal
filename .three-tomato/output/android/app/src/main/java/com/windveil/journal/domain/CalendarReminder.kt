@@ -41,7 +41,7 @@ class CalendarReminder @Inject constructor(@ApplicationContext private val conte
             CalendarContract.Calendars.CONTENT_URI,
             arrayOf(CalendarContract.Calendars._ID),
             "${CalendarContract.Calendars.CALENDAR_DISPLAY_NAME} = ?",
-            arrayOf("未发生事件管理局"),
+            arrayOf("风起簿", "未发生事件管理局"),
             null,
         )?.use { cursor ->
             if (cursor.moveToFirst()) cursor.getLong(0) else null
@@ -55,7 +55,7 @@ class CalendarReminder @Inject constructor(@ApplicationContext private val conte
         val accountName = "windveil.local"
         val values = ContentValues().apply {
             put(CalendarContract.Calendars.NAME, "windveil")
-            put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, "未发生事件管理局")
+            put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, "风起簿")
             put(CalendarContract.Calendars.CALENDAR_COLOR, 0xFF6B8F71.toInt())
             put(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL, CalendarContract.Calendars.CAL_ACCESS_OWNER)
             put(CalendarContract.Calendars.OWNER_ACCOUNT, accountName)

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">未发生事件管理局</string>
+    <string name="app_name">风起簿</string>
     <string name="welcome_title">为那些还没发生、但值得被认真对待的事，留一盏灯。</string>
     <string name="welcome_start">开始</string>
     <string name="garden_title">未发生之地</string>

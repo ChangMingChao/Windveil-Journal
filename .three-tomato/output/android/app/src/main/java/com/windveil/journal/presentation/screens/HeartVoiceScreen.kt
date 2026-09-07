@@ -48,14 +48,14 @@ import javax.inject.Inject
  *   - 陈述（如「我想去吃自助」）→ 记为轻事件
  * 阶段2 记录或建议：提问时注入个人上下文（轻事件/愿望标题），模型引用记忆给出带排序的建议。
  */
-private const val CLASSIFY_PROMPT = """你是「未发生事件管理局」的意图分类器。判断用户这条消息属于哪类：
+private const val CLASSIFY_PROMPT = """你是「风起簿」的意图分类器。判断用户这条消息属于哪类：
 - "ask"：在提问、征求建议（吃什么、做什么、去哪里、怎么选……）——用户想要基于他的历史记录的建议
 - "record"：在陈述一个事实、计划、想去的地方、偏好或承诺——值得记下来供以后参考
 - "chat"：纯闲聊或情绪抒发，与安排无关
 
 只输出 JSON：{"intent":"ask 或 record 或 chat"}"""
 
-private const val RECORD_PROMPT = """你是「未发生事件管理局」的心语助手。用户陈述了一件想记录的事，先判断它属于哪类：
+private const val RECORD_PROMPT = """你是「风起簿」的心语助手。用户陈述了一件想记录的事，先判断它属于哪类：
 - "wish"：未来想做的事、愿望、计划（想去滑雪、想去看海、想学画画）→ 记到「未发生之地」
 - "lite"：当下的小事、随手记（今晚取快递、想吃自助）→ 记到「随手记」
 
@@ -64,7 +64,7 @@ private const val RECORD_PROMPT = """你是「未发生事件管理局」的心�
 
 语气温柔不评判，禁止出现「任务」「逾期」「未完成」等词。"""
 
-private fun askPrompt(contextBlock: String) = """你是「未发生事件管理局」的心语助手。用户在征求建议，请基于他的个人记录回答。
+private fun askPrompt(contextBlock: String) = """你是「风起簿」的心语助手。用户在征求建议，请基于他的个人记录回答。
 
 用户的个人记录（轻事件=随手的记录，愿望=还没发生但想做的事）：
 $contextBlock
@@ -162,7 +162,7 @@ class HeartVoiceViewModel @Inject constructor(
                     runCatching {
                         val reply = heartVoiceClient.chat(
                             cfg,
-                            "你是「未发生事件管理局」的温柔陪伴者。用户在闲聊或抒发情绪，温柔回应 1-2 句，不评判不催促。直接输出回应文本。",
+                            "你是「风起簿」的温柔陪伴者。用户在闲聊或抒发情绪，温柔回应 1-2 句，不评判不催促。直接输出回应文本。",
                             listOf(HeartVoiceClient.Turn("user", trimmed)),
                         )
                         messages.value = messages.value + HeartVoiceMessage("assistant", reply.trim())
