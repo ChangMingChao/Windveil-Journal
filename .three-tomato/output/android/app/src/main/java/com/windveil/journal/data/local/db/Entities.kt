@@ -60,3 +60,14 @@ data class MemoryEntity(
     val publishedAt: String? = null,
     val createdAt: String,
 )
+
+
+/** 用户画像条目（user-profile）：来源分层，可查看可删除。 */
+@Entity(tableName = "preferences")
+data class PreferenceEntity(
+    @PrimaryKey val id: String, // UUID
+    val prefKey: String, //有空时间 | 运动偏好 | 饮食倾向 | 其他偏好
+    val value: String, // 条目内容（≤50 字）
+    val source: String, // declared（用户明说）| inferred（模型推断）
+    val createdAt: String,
+)

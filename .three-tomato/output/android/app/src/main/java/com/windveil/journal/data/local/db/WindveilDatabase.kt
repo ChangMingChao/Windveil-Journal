@@ -8,14 +8,15 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [WishEntity::class, LiteEventEntity::class, MemoryEntity::class],
-    version = 2,
+    entities = [WishEntity::class, LiteEventEntity::class, MemoryEntity::class, PreferenceEntity::class],
+    version = 3,
     exportSchema = false,
 )
 abstract class WindveilDatabase : RoomDatabase() {
     abstract fun wishDao(): WishDao
     abstract fun liteEventDao(): LiteEventDao
     abstract fun memoryDao(): MemoryDao
+    abstract fun preferenceDao(): PreferenceDao
 
     companion object {
         @Volatile
@@ -29,13 +30,27 @@ abstract class WindveilDatabase : RoomDatabase() {
             }
         }
 
+        /** 2→3：新建 preferences 表（用户画像，user-profile）。 */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS preferences (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "prefKey TEXT NOT NULL, " +
+                        "value TEXT NOT NULL, " +
+                        "source TEXT NOT NULL, " +
+                        "createdAt TEXT NOT NULL)"
+                )
+            }
+        }
+
         fun get(context: Context): WindveilDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     WindveilDatabase::class.java,
                     "windveil.db",
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
     }
 }

@@ -70,7 +70,8 @@ private fun askPrompt(contextBlock: String) = """你是「未发生事件管理�
 $contextBlock
 
 回答要求：
-- 优先从记录里找依据建议（如记录过「想吃自助」就提示可以考虑），引用时说「你某天记过/你想过……」
+- 用户画像（如有）是最强的排序依据：与画像冲突的选项靠后并说明原因（如画像有「在减肥」，自助类要排后），一致的优先
+- 其次从记录里找依据建议（如记录过「想吃自助」就提示可以考虑），引用时说「你某天记过/你想过……」
 - 记录之间有冲突（如既想「吃自助」又在「减肥」），温柔地都摆出来给排序与理由，不评判
 - 记录为空或与当前问题无关时：理解用户其实想要「换个思路、新选择」，直接给出该话题下 3 个左右具体的常识性建议，不要说「没找到记录」
 - 即使有记录，也可在合适时补 1 个记录之外的新想法，但必须标注「这是记录之外的新想法」，且把与记录相关的排在前面
@@ -171,6 +172,10 @@ class HeartVoiceViewModel @Inject constructor(
                     }
                 }
             }
+            // 对话后静默提炼画像（user-profile）：不阻塞、不打扰，失败跳过
+            if (intent != "chat") {
+                runCatching { repository.extractAndStorePreferences(trimmed) }
+            }
             loading.value = false
         }
     }
@@ -178,9 +183,15 @@ class HeartVoiceViewModel @Inject constructor(
     private fun cleanJson(content: String): String =
         content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
 
-    /** 个人记忆上下文：open 轻事件（最近 20 条）+ 未完成愿望标题（最近 20 条）。 */
+    /** 个人记忆上下文：画像条目 + open 轻事件（最近 20 条）+ 未完成愿望标题（最近 20 条）。 */
     private suspend fun buildMemoryContext(): String {
         val sb = StringBuilder()
+        val profileBlock = repository.preferencesBlock()
+        if (profileBlock.isNotBlank() && !profileBlock.contains("还没有")) {
+            sb.appendLine("【用户画像】")
+            sb.appendLine(profileBlock)
+            sb.appendLine()
+        }
         val liteEvents = repository.observeOpenLiteEvents().first()
         if (liteEvents.isNotEmpty()) {
             sb.appendLine("【随手记】")

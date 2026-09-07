@@ -84,3 +84,22 @@ interface MemoryDao {
     @Query("DELETE FROM memories WHERE id = :id")
     suspend fun delete(id: String)
 }
+
+
+@Dao
+interface PreferenceDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(pref: com.windveil.journal.data.local.db.PreferenceEntity)
+
+    @Query("SELECT * FROM preferences ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<com.windveil.journal.data.local.db.PreferenceEntity>>
+
+    @Query("SELECT * FROM preferences")
+    suspend fun all(): List<com.windveil.journal.data.local.db.PreferenceEntity>
+
+    @Query("SELECT COUNT(*) FROM preferences WHERE prefKey = :key AND value = :value")
+    suspend fun countSame(key: String, value: String): Int
+
+    @Query("DELETE FROM preferences WHERE id = :id")
+    suspend fun delete(id: String)
+}

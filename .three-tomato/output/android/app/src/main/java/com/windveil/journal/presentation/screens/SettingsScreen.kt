@@ -3,6 +3,7 @@ package com.windveil.journal.presentation.screens
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -23,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -45,11 +47,13 @@ class SettingsViewModel @Inject constructor(
     private val llmConfigStore: LlmConfigStore,
     private val calendarReminder: CalendarReminder,
     private val exportService: com.windveil.journal.domain.ExportService,
+    private val repository: com.windveil.journal.data.repository.StandaloneRepository,
 ) : ViewModel() {
     val llmConfig = MutableStateFlow<LlmConfig?>(null)
     val calendarGranted = MutableStateFlow(false)
     val exportPath = MutableStateFlow<String?>(null)
     val importResult = MutableStateFlow<String?>(null)
+    val preferences = MutableStateFlow<List<com.windveil.journal.data.local.db.PreferenceEntity>>(emptyList())
     val savedFlag = MutableStateFlow(0) // 每次保存 +1，UI 据此弹「已保存」
     val error = MutableStateFlow<String?>(null)
 
@@ -64,6 +68,16 @@ class SettingsViewModel @Inject constructor(
             llmConfig.value = llmConfigStore.current()
             savedFlag.value = savedFlag.value + 1
         }
+    }
+
+    fun refreshPreferences() {
+        viewModelScope.launch {
+            repository.observePreferences().collect { preferences.value = it }
+        }
+    }
+
+    fun deletePreference(id: String) {
+        viewModelScope.launch { repository.deletePreference(id) }
     }
 
     fun requestCalendar(context: android.content.Context) {
@@ -92,7 +106,7 @@ class SettingsViewModel @Inject constructor(
 }
 
 /** 「我的」二级页路由。 */
-private enum class SettingsSection { ROOT, HEART_MODEL, REMIND, DATA }
+private enum class SettingsSection { ROOT, HEART_MODEL, PROFILE, REMIND, DATA }
 
 /** 「我的」主页：分类菜单（单机模式：无账号页、无邮件通道）。 */
 @Composable
@@ -134,6 +148,10 @@ fun SettingsScreen(
         }
         SettingsSection.HEART_MODEL -> SectionScaffold("心语与模型", onBackToRoot = { section = SettingsSection.ROOT }) {
             HeartModelSection(viewModel)
+            ProfileEntryButton { section = SettingsSection.PROFILE }
+        }
+        SettingsSection.PROFILE -> SectionScaffold("用户画像", onBackToRoot = { section = SettingsSection.ROOT }) {
+            ProfileSection(viewModel)
         }
         SettingsSection.REMIND -> SectionScaffold("提醒（系统日历）", onBackToRoot = { section = SettingsSection.ROOT }) {
             RemindSection(viewModel, context)
@@ -207,6 +225,46 @@ private fun HeartModelSection(viewModel: SettingsViewModel) {
     }
     val error by viewModel.error.collectAsState()
     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+}
+
+/** 画像入口按钮（放在心语与模型页内）。 */
+@Composable
+private fun ProfileEntryButton(onClick: () -> Unit) {
+    TextButton(onClick = onClick) { Text("查看/管理用户画像 →") }
+}
+
+/** 用户画像：条目列表，可删除（declared/inferred 都可删）。 */
+@Composable
+private fun ProfileSection(viewModel: SettingsViewModel) {
+    val preferences by viewModel.preferences.collectAsState()
+
+    LaunchedEffect(Unit) { viewModel.refreshPreferences() }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("它从对话里提炼的你的偏好（仅存本机）", style = MaterialTheme.typography.titleSmall)
+            if (preferences.isEmpty()) {
+                Text(
+                    "还没有画像条目。聊到的偏好（如「在减肥」「周末有空」）会自动记在这里，建议时会用上。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            preferences.forEach { item ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(item.value, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "${item.prefKey} · " + if (item.source == "declared") "你说过的" else "我猜的",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = { viewModel.deletePreference(item.id) }) { Text("删掉") }
+                }
+            }
+        }
+    }
 }
 
 /** 提醒：系统日历授权引导。 */

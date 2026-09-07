@@ -20,3 +20,11 @@
 {"id": "AND-UX-05", "status": "pass", "duration_ms": 0, "timestamp": "2026-09-07T01:47:36Z", "scenario": "S09", "note": "android-ux-crud: 轻事件编辑（文本+备注+照片）", "source": ".three-tomato/output/android 编译+单测+模拟器启动验证"}
 {"id": "AND-UX-06", "status": "pass", "duration_ms": 0, "timestamp": "2026-09-07T01:47:36Z", "scenario": "S06", "note": "android-ux-crud: 记忆页删除", "source": ".three-tomato/output/android 编译+单测+模拟器启动验证"}
 {"id": "AND-UX-07", "status": "pass", "duration_ms": 0, "timestamp": "2026-09-07T01:47:36Z", "scenario": "S05", "note": "android-ux-crud: 愿望改标题", "source": ".three-tomato/output/android 编译+单测+模拟器启动验证"}
+{"id": "AND-PR-01", "status": "pass", "duration_ms": 0, "timestamp": "2026-09-07T03:04:08Z", "scenario": "S08", "note": "user-profile: 对话后提炼 declared 偏好落库", "source": ".three-tomato/output/android 编译+单测+模拟器迁移验证"}
+{"id": "AND-PR-02", "status": "pass", "duration_ms": 0, "timestamp": "2026-09-07T03:04:08Z", "scenario": "S08", "note": "user-profile: 推断偏好标 inferred 落库", "source": ".three-tomato/output/android 编译+单测+模拟器迁移验证"}
+{"id": "AND-PR-03", "status": "pass", "duration_ms": 0, "timestamp": "2026-09-07T03:04:08Z", "scenario": "S08", "note": "user-profile: 同 key+value 去重不重复插入", "source": ".three-tomato/output/android 编译+单测+模拟器迁移验证"}
+{"id": "AND-PR-04", "status": "pass", "duration_ms": 0, "timestamp": "2026-09-07T03:04:08Z", "scenario": "S08", "note": "user-profile: 一次最多存 2 条", "source": ".three-tomato/output/android 编译+单测+模拟器迁移验证"}
+{"id": "AND-PR-05", "status": "pass", "duration_ms": 0, "timestamp": "2026-09-07T03:04:08Z", "scenario": "S08", "note": "user-profile: 模型降级静默跳过提炼", "source": ".three-tomato/output/android 编译+单测+模拟器迁移验证"}
+{"id": "AND-PR-06", "status": "pass", "duration_ms": 0, "timestamp": "2026-09-07T03:04:08Z", "scenario": "S08", "note": "user-profile: ask 注入画像且冲突排序生效", "source": ".three-tomato/output/android 编译+单测+模拟器迁移验证"}
+{"id": "AND-PR-07", "status": "pass", "duration_ms": 0, "timestamp": "2026-09-07T03:04:08Z", "scenario": "S08", "note": "user-profile: 画像条目可删除", "source": ".three-tomato/output/android 编译+单测+模拟器迁移验证"}
+{"id": "AND-PR-08", "status": "pass", "duration_ms": 0, "timestamp": "2026-09-07T03:04:08Z", "scenario": "S08", "note": "user-profile: Room 2→3 迁移建表成功（模拟器验证 user_version=3）", "source": ".three-tomato/output/android 编译+单测+模拟器迁移验证"}

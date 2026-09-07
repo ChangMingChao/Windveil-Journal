@@ -103,6 +103,39 @@ class AnalysisService @Inject constructor(
 
     data class TimingDraft(val type: String, val value: String?, val reason: String?)
 
+    /**
+     * 对话后提炼用户画像条目（user-profile）：一次最多 2 条，可返回空。
+     * 只在对话内容自然涉及偏好/习惯/时间安排时提炼，不做主动提问。
+     */
+    suspend fun extractPreferences(config: LlmConfig?, userText: String): List<PreferenceDraft> {
+        if (config?.usable != true) return emptyList()
+        val prompt = """你是「未发生事件管理局」的画像提炼器。用户刚说了："${userText.take(200)}"
+
+从中提炼关于用户的长期偏好/习惯/时间安排（有空时间、运动偏好、饮食倾向、作息等）。
+- 只有明确涉及才提炼，没有就给空数组；一次最多 2 条
+- 每条 ≤30 字；value 用中性陈述（如「在减肥」「周末上午通常有空」）
+- source：用户明确说的="declared"；从上下文推断的="inferred"
+
+只输出 JSON：{"items":[{"pref_key":"有空时间/运动偏好/饮食倾向/其他偏好","value":"...","source":"declared 或 inferred"}]}"""
+        return runCatching {
+            val content = heartVoiceClient.chat(config, prompt, emptyList())
+            val cleaned = content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+            val obj = JSONObject(cleaned)
+            val items = obj.optJSONArray("items") ?: return@runCatching emptyList()
+            (0 until items.length()).mapNotNull { i ->
+                val item = items.optJSONObject(i) ?: return@mapNotNull null
+                val value = item.optString("value", "").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                PreferenceDraft(
+                    prefKey = item.optString("pref_key", "其他偏好"),
+                    value = value.take(50),
+                    source = if (item.optString("source") == "declared") "declared" else "inferred",
+                )
+            }.take(2)
+        }.getOrDefault(emptyList())
+    }
+
+    data class PreferenceDraft(val prefKey: String, val value: String, val source: String)
+
     /** 愿望详情页的自由对话（chat/推进/疲惫信号由调用方按语义处理）。返回 null = 降级。 */
     suspend fun chat(config: LlmConfig?, wishTitle: String, userText: String): String? {
         if (config?.usable != true) return null

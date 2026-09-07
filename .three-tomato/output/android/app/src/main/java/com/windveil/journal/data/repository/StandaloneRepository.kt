@@ -360,6 +360,38 @@ class StandaloneRepository @Inject constructor(
     /** 日历权限是否已授予（详情页定时机前的确认弹窗判断）。 */
     fun hasCalendarPermission(): Boolean = calendarReminder.hasPermission()
 
+    // ---------- 用户画像（user-profile）----------
+
+    private val prefDao = db.preferenceDao()
+
+    fun observePreferences(): Flow<List<com.windveil.journal.data.local.db.PreferenceEntity>> = prefDao.observeAll()
+
+    /** 心语对话后静默提炼：同 key+value 去重，最多写入 2 条。 */
+    suspend fun extractAndStorePreferences(userText: String): Int {
+        val drafts = analysisService.extractPreferences(llmConfig(), userText)
+        var stored = 0
+        for (draft in drafts) {
+            if (prefDao.countSame(draft.prefKey, draft.value) > 0) continue
+            prefDao.insert(
+                com.windveil.journal.data.local.db.PreferenceEntity(
+                    id = newId(), prefKey = draft.prefKey, value = draft.value,
+                    source = draft.source, createdAt = now(),
+                )
+            )
+            stored++
+            if (stored >= 2) break
+        }
+        return stored
+    }
+
+    suspend fun deletePreference(id: String) = prefDao.delete(id)
+
+    suspend fun preferencesBlock(): String {
+        val prefs = prefDao.all()
+        if (prefs.isEmpty()) return "（还没有画像条目）"
+        return prefs.joinToString("\n") { "- ${it.prefKey}：${it.value}（${if (it.source == "declared") "你说过的" else "我猜的"}）" }
+    }
+
     // ---------- 节假日枚举（详情页多选器）----------
 
     fun holidayNames(): List<String> = holidayDataSource.names()
