@@ -1,6 +1,6 @@
-# three-tomato 配置 — Windveil Journal（未发生事件管理局）
-# 变更提案：android-native-app（logos/changes/android-native-app/proposal.md）
-# 输入：.three-tomato/requirements/（PRD.md + 6 个 OpenAPI yaml）
+# three-tomato 配置 — 风起簿（Windveil Journal）
+# 历史记录：本工程最初由 three-tomato 依据 requirements/（PRD.md + OpenAPI 契约）生成，
+# 现已迁出为项目顶层 android/ 目录并持续独立演进，本文件仅作生成来源的存档说明。
 
 # 目标平台：仅 Android（用户指定）
 platforms:
@@ -19,11 +19,11 @@ tech_stack:
     min_sdk: 26
     target_sdk: 34
 
-# 协议保留：后端为 REST/JSON（见 requirements/*.yaml），Android 端使用标准 HTTP 客户端
+# 协议保留：服务端契约为 REST/JSON（见 requirements/*.yaml）
 # 认证：自管 JWT —— access token (Bearer, 15min) + refresh token (httpOnly Cookie, 30d)
-# 输出设置
+# 输出设置（生成目录已迁至项目顶层 android/）
 output:
-  directory: .three-tomato/output
+  directory: android
   include_tests: true
   include_docs: true
   language: zh-CN

@@ -1,1 +1,0 @@
-{"ts":"2026-09-07T03:37:44.035Z","trigger":"merge","old_code":"## [code] 代码实现\n- [ ] Room：PreferenceEntity/Dao + 迁移 2→3\n- [ ] AnalysisService：对话后提炼（≤2 条/次，去重）+ askPrompt 注入偏好区块\n- [ ] HeartVoiceViewModel：对话后静默提炼写入\n- [ ] SettingsScreen：用户画像二级页（查看/删除）\n- [ ] UT：提炼解析、迁移\n- [ ] 构建部署验证 + E2E（记「在减肥」→ 问吃什么 → 自助靠后）"}

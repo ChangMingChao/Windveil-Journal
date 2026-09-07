@@ -1,4 +1,4 @@
-# 风启簿 · Windveil Journal
+# 风起簿 · Windveil Journal
 
 > Wait for the wind, then set forth. 等风来，再启程。
 
@@ -8,142 +8,54 @@
 
 ## 产品能力
 
-- 匿名建立私人空间，用一句话、语音或照片随手种下一个愿望。
+- 匿名建立私人空间，用一句话随手种下一个愿望。
 - Agent 提炼愿望中的感受、隐含条件与最小下一步；模型不可用时仍会先保存原话。
 - 用季节、月份、空闲周末、疲惫信号等方式约定时机，让提醒在对的时候出现。
-- 每位用户每周最多收到 3 条主动提醒，并支持顺延、暂停、安静放下与重新种下。
+- 支持顺延、暂停、安静放下与重新种下。
 - 愿望发生后可以写成记忆页，长期沉淀为「已发生之书」。
-- 内容按用户隔离，敏感字段使用应用层 AES-256-GCM 加密，媒体保存在 S3 兼容对象存储。
+- 独立模式：数据完全存于本地（Room），无需服务端即可使用；支持 JSON 导出/导入。
+
+## 项目形态
+
+本项目现已完全收敛为 **Android 原生 App**，位于 [`android/`](android/)。历史上的 Web 后端（FastAPI）、Web 前端（React）、部署与 OpenLogos 方法论文档已删除，如需追溯可查看 git 历史。
 
 ## 技术栈
 
-| 层级 | 技术 |
+| 维度 | 选择 |
 | --- | --- |
-| 前端 | React 19、TypeScript、Vite 6、React Router 7、TanStack Query、Tailwind CSS 4、PWA |
-| 后端 | FastAPI、Pydantic v2、SQLAlchemy 2.0 async、Alembic、APScheduler |
-| 数据库 | SQLite 单文件，启用 WAL |
-| 对象存储 | S3 兼容协议，本地开发使用文件系统后端，部署可选 MinIO 或云 OSS |
-| 认证 | Argon2id、JWT access/refresh，refresh token 存 httpOnly Cookie |
-| 部署 | Docker Compose、Caddy、Nginx、Uvicorn、独立 Scheduler 进程 |
+| 语言 | Kotlin |
+| UI | Jetpack Compose + Material 3（纸色主题，低饱和配色） |
+| 架构 | MVVM（StateFlow + ViewModel） |
+| DI | Hilt |
+| 异步 | Coroutines |
+| 本地存储 | Room（独立模式数据）+ DataStore（token/偏好） |
+| 网络 | Retrofit + OkHttp + Gson（服务端契约见 `.three-tomato/requirements/*.yaml`） |
+| 图片 | Coil |
+| 版本 | minSdk 26（Android 8.0）/ targetSdk 34 |
 
 ## 目录结构
 
 ```text
-frontend/                React 前端与静态站点构建
-backend/                 FastAPI、迁移、调度器与测试
-ops/                     部署、备份、环境检查与数据库运维脚本
-scripts/                 冒烟测试与本地辅助脚本
-logos/                   OpenLogos 需求、设计、API、测试与变更档案
-docker-compose.yml       单机部署拓扑
-.env.example             环境变量样例，不包含真实密钥
+android/                      Android 原生 App（项目主体）
+  app/src/main/java/com/windveil/journal/
+    data/local/               Room 实体/DAO、TokenStore、CookieJarStore
+    data/remote/              Retrofit 接口与契约模型
+    data/repository/          独立模式与在线模式仓储
+    domain/                   时机计算、节假日、日历提醒、导出等服务
+    presentation/             主题、导航与各页面
+.three-tomato/requirements/   产品 PRD 与 OpenAPI 契约（需求参考）
+.three-tomato/config.yaml     three-tomato 生成配置存档说明
 ```
 
-## 本地开发
+## 构建与运行
 
-准备 Python 3.12、uv、npm。如需媒体上传测试，准备可用的 Docker Compose 环境。
-
-1. 安装依赖：
-
-   ```bash
-   cd backend
-   uv sync --extra dev
-
-   cd ../frontend
-   npm install
-   ```
-
-2. 初始化数据库：
+1. 用 Android Studio（Hedgehog 以上）打开 `android/` 目录，等待 Gradle Sync。
+2. 运行 `app` 到设备/模拟器；首次启动点「开始」即建立匿名个人空间。
+3. 单元测试：
 
    ```bash
-   cd backend
-   uv run alembic upgrade head
+   cd android
+   ./gradlew :app:testDebugUnitTest
    ```
 
-3. 启动后端与调度器：
-
-   ```bash
-   uv run uvicorn app.main:app --reload --port 8000
-   uv run python -m app.scheduler
-   ```
-
-4. 启动前端：
-
-   ```bash
-   cd frontend
-   pnpm dev
-   ```
-
-默认访问入口是 `http://localhost:5173`，API 代理到 `http://127.0.0.1:8000`。后端 API 文档在 `http://127.0.0.1:8000/docs`。
-
-本地环境默认使用 SQLite、本地文件对象存储和 mock 外部服务。纯文字功能无需启动 MinIO。
-
-## 测试
-
-后端：
-
-```bash
-cd backend
-uv run pytest
-uv run ruff check .
-```
-
-前端：
-
-```bash
-cd frontend
-pnpm typecheck
-pnpm test:run
-pnpm build
-```
-
-## 构建
-
-前端构建会产出 `frontend/dist`：
-
-```bash
-cd frontend
-pnpm install --frozen-lockfile
-pnpm build
-```
-
-后端 API 与 Scheduler 共用同一个镜像：
-
-```bash
-docker build -t unhappened-api:<git-sha> ./backend
-```
-
-镜像 tag 使用当前 git sha，不使用 `latest`，以便发布和回滚都有确定目标。
-
-## 部署
-
-1. 复制并填写环境变量：
-
-   ```bash
-   cp .env.example .env
-   chmod 600 .env
-   ```
-
-2. 使用项目根目录中的发布脚本：
-
-   ```bash
-   IMAGE_TAG=$(git rev-parse --short HEAD) bash ops/deploy.sh
-   ```
-
-发布流程会执行环境检查、导出迁移 SQL、备份数据库、应用迁移、更新 API、发布静态站点，最后重建 Scheduler。部署后可运行：
-
-```bash
-bash ops/post-deploy-check.sh
-```
-
-详细拓扑、迁移、回滚与冒烟检查见 [`logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md`](logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md)。
-
-## 安全约定
-
-- `.env` 不入库，其中包含数据库地址、JWT、加密密钥与外部服务凭证。
-- `ENCRYPTION_KEY` 是唯一不可重建的密钥。丢失后已加密的用户内容将永久不可读。
-- `ENCRYPTION_KEY` 与数据库备份必须分开存放，并保持至少两份离线冷备。
-- 测试后门 `/api/test/*` 只在 `APP_ENV=test` 时注册。
-
-## 开发流程
-
-本项目使用 OpenLogos 管理 Why、What、How 三层文档。修改代码前先查看对应的变更提案；规格与实现必须保持可追溯。项目索引见 [`logos/logos-project.yaml`](logos/logos-project.yaml)。
+详细的场景、页面与已知边界说明见 [`android/README.md`](android/README.md)。
