@@ -36,19 +36,24 @@ object TimingCalculator {
     )
 
     /** 节假日数据（assets/holidays_{year}.json 的 holidays 映射）。 */
-    class HolidayData(private val byYear: Map<Int, Map<String, String>>) {
-        fun holidaysOf(year: Int): Map<String, String> = byYear[year].orEmpty()
+    class HolidayData(private val byYear: Map<Int, Pair<Map<String, String>, Map<String, String>>>) {
+        fun holidaysOf(year: Int): Map<String, String> = byYear[year]?.first.orEmpty()
+
+        /** 该日期是否为法定调休上班日（数据缺失时恒 false——安全退化，同后端）。 */
+        fun isWorkday(day: LocalDate): Boolean = byYear[day.year]?.second?.containsKey(day.toString()) == true
 
         companion object {
             fun parse(jsonByYear: Map<Int, String>): HolidayData {
                 val gson = Gson()
-                val type = object : TypeToken<Map<String, String>>() {}.type
                 val parsed = jsonByYear.mapValues { (_, text) ->
                     runCatching {
                         val root = gson.fromJson<Map<String, Any>>(text, object : TypeToken<Map<String, Any>>() {}.type)
                         @Suppress("UNCHECKED_CAST")
-                        (root["holidays"] as? Map<String, String>) ?: emptyMap()
-                    }.getOrDefault(emptyMap())
+                        val holidays = (root["holidays"] as? Map<String, String>) ?: emptyMap()
+                        @Suppress("UNCHECKED_CAST")
+                        val workdays = (root["workdays"] as? Map<String, String>) ?: emptyMap()
+                        Pair(holidays, workdays)
+                    }.getOrDefault(Pair(emptyMap(), emptyMap()))
                 }
                 return HolidayData(parsed)
             }
@@ -105,11 +110,14 @@ object TimingCalculator {
             }
 
             "free_weekend" -> {
-                // 下一个非调休周末日；无数据时退化为「第一个周末」（与后端一致）
+                // 下一个「真周末」：周六/周日、非调休上班日、且不在法定假期内
+                //（假期本身天天在放假，不算「等来的空闲周末」）；无数据时退化为「第一个周末」
+                fun inHoliday(day: LocalDate): Boolean =
+                    holidayData?.holidaysOf(day.year)?.containsKey(day.toString()) == true
                 var target: LocalDate? = null
                 for (offset in 1..45) {
                     val day = today.plusDays(offset.toLong())
-                    if (day.dayOfWeek.value >= 6 && !isWorkday(day, holidayData)) {
+                    if (day.dayOfWeek.value >= 6 && !isWorkday(day, holidayData) && !inHoliday(day)) {
                         target = day
                         break
                     }
@@ -173,11 +181,7 @@ object TimingCalculator {
     }
 
     private fun isWorkday(day: LocalDate, data: HolidayData?): Boolean =
-        data?.holidaysOf(day.year)?.get(day.toString())?.let { name ->
-            // 调休上班日数据在 workdays 字段；这里简化：仅当日期出现在 holidays 且标记为班时才算
-            // —— 与后端一致由 assets JSON 的 workdays 提供；当前 assets 无 workdays 时恒 false
-            false
-        } ?: false
+        data?.isWorkday(day) ?: false
 
     fun isoInstant(instant: Instant): String =
         DateTimeFormatter.ISO_INSTANT.format(instant)

@@ -190,6 +190,20 @@ class TimingCalculatorTest {
         assertEquals(2026, at.year); assertEquals(9, at.monthValue); assertEquals(12, at.dayOfMonth)
     }
 
+    @Test
+    fun free_weekend_调休上班的周六被跳过() {
+        // 国庆假期 10/1-10/8（10/3、10/4 都在假期中不算），10/10（周六）调休上班
+        // → 从 10/1 起算，下一个真周末是 10/17
+        val data = TimingCalculator.HolidayData.parse(
+            mapOf(2026 to """{"holidays": {"2026-10-01": "国庆节", "2026-10-02": "国庆节", "2026-10-03": "国庆节", "2026-10-04": "国庆节", "2026-10-05": "国庆节", "2026-10-06": "国庆节", "2026-10-07": "国庆节", "2026-10-08": "国庆节"}, "workdays": {"2026-10-10": "国庆节调休上班", "2026-10-11": "国庆节调休上班"}}""")
+        )
+        val plan = TimingCalculator.plan(
+            "free_weekend", today = LocalDate.of(2026, 10, 1), zone = zone, holidayData = data,
+        )
+        val at = plan.nextTriggerAt!!.atZone(zone)
+        assertEquals(10, at.monthValue); assertEquals(17, at.dayOfMonth)
+    }
+
     // ---- 卡面文案 ----
 
     @Test
