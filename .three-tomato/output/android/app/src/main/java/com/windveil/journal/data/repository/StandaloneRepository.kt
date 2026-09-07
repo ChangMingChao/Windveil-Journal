@@ -376,4 +376,99 @@ class StandaloneRepository @Inject constructor(
         )
         return gson.toJson(payload)
     }
+
+    /**
+     * 导入备份（standalone-mode 补全）：按 ID 合并——同 ID 覆盖、新 ID 插入，不删现有数据。
+     * 返回 (wishes, liteEvents, memories) 三类各自导入的条数。
+     * 注意：照片路径指向导出设备本机目录，导入时校验文件存在，无效路径丢弃（照片存 null）。
+     */
+    suspend fun importJson(json: String, sanitizePhotos: (List<String>) -> List<String> = { it }): Triple<Int, Int, Int> {
+        val type = object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type
+        val payload: Map<String, Any> = gson.fromJson(json, type)
+
+        fun decodeList(raw: Any?): List<Map<String, Any>> {
+            val listJson = gson.toJson(raw ?: return emptyList())
+            return gson.fromJson(listJson, object : com.google.gson.reflect.TypeToken<List<Map<String, Any>>>() {}.type)
+        }
+
+        fun str(m: Map<String, Any>, key: String): String? = (m[key] as? String)?.takeIf { it != "null" }
+        fun bool(m: Map<String, Any>, key: String): Boolean = m[key] == true
+
+        var wishCount = 0
+        for (m in decodeList(payload["wishes"])) {
+            val id = str(m, "id") ?: continue
+            wishDao.insert(
+                WishEntity(
+                    id = id,
+                    title = str(m, "title") ?: "",
+                    originalText = str(m, "originalText"),
+                    source = str(m, "source") ?: "text",
+                    state = str(m, "state") ?: "seeded",
+                    timingType = str(m, "timingType"),
+                    timingValue = str(m, "timingValue"),
+                    triggerKind = str(m, "triggerKind") ?: "none",
+                    nextTriggerAt = str(m, "nextTriggerAt"),
+                    timingOccurrence = str(m, "timingOccurrence"),
+                    softDeferred = bool(m, "softDeferred"),
+                    letGoAt = str(m, "letGoAt"),
+                    seededAt = str(m, "seededAt") ?: now(),
+                    lastActivityAt = str(m, "lastActivityAt") ?: now(),
+                    understanding = str(m, "understanding"),
+                    pendingQuestion = str(m, "pendingQuestion"),
+                    currentStep = str(m, "currentStep"),
+                    timeline = str(m, "timeline"),
+                    amendedFrom = str(m, "amendedFrom"),
+                )
+            )
+            wishCount++
+        }
+
+        var liteCount = 0
+        for (m in decodeList(payload["lite_events"])) {
+            val id = str(m, "id") ?: continue
+            // 照片路径指向导出设备的目录：导入时过滤掉本机不存在的文件
+            val photosJson = str(m, "photos")?.let { photosStr ->
+                val paths = runCatching {
+                    gson.fromJson<List<String>>(photosStr, object : com.google.gson.reflect.TypeToken<List<String>>() {}.type)
+                }.getOrDefault(emptyList())
+                val valid = sanitizePhotos(paths)
+                if (valid.isEmpty()) null else gson.toJson(valid)
+            }
+            liteDao.insert(
+                LiteEventEntity(
+                    id = id,
+                    text = str(m, "text") ?: "",
+                    status = str(m, "status") ?: "open",
+                    createdAt = str(m, "createdAt") ?: now(),
+                    closedAt = str(m, "closedAt"),
+                    note = str(m, "note"),
+                    photos = photosJson,
+                )
+            )
+            liteCount++
+        }
+
+        var memCount = 0
+        for (m in decodeList(payload["memories"])) {
+            val id = str(m, "id") ?: continue
+            memoryDao.insert(
+                MemoryEntity(
+                    id = id,
+                    wishId = str(m, "wishId") ?: "",
+                    title = str(m, "title") ?: "",
+                    happenedFrom = str(m, "happenedFrom") ?: "",
+                    happenedTo = str(m, "happenedTo"),
+                    cause = str(m, "cause"),
+                    process = str(m, "process"),
+                    mood = str(m, "mood"),
+                    lastLine = str(m, "lastLine"),
+                    status = str(m, "status") ?: "published",
+                    publishedAt = str(m, "publishedAt"),
+                    createdAt = str(m, "createdAt") ?: now(),
+                )
+            )
+            memCount++
+        }
+        return Triple(wishCount, liteCount, memCount)
+    }
 }

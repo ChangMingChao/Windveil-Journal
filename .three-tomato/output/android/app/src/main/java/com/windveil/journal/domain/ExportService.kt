@@ -30,4 +30,14 @@ class ExportService @Inject constructor(
         out.writeText(json, Charsets.UTF_8)
         out.absolutePath
     }
+
+    /**
+     * 从用户选中的文件导入（系统文件选择器给 Uri）。
+     * 照片路径按本机文件存在性校验过滤。
+     */
+    suspend fun importFromUri(context: Context, uri: android.net.Uri): Triple<Int, Int, Int> = withContext(Dispatchers.IO) {
+        val json = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            ?: throw IllegalStateException("读不了这个文件")
+        repository.importJson(json, sanitizePhotos = { paths -> paths.filter { File(it).exists() } })
+    }
 }

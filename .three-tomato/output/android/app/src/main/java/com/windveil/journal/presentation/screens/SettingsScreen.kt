@@ -22,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -48,6 +49,7 @@ class SettingsViewModel @Inject constructor(
     val llmConfig = MutableStateFlow<LlmConfig?>(null)
     val calendarGranted = MutableStateFlow(false)
     val exportPath = MutableStateFlow<String?>(null)
+    val importResult = MutableStateFlow<String?>(null)
     val savedFlag = MutableStateFlow(0) // 每次保存 +1，UI 据此弹「已保存」
     val error = MutableStateFlow<String?>(null)
 
@@ -75,6 +77,16 @@ class SettingsViewModel @Inject constructor(
             runCatching { exportService.exportToDownloads(context) }
                 .onSuccess { exportPath.value = it }
                 .onFailure { error.value = it.message }
+        }
+    }
+
+    fun import(context: android.content.Context, uri: android.net.Uri) {
+        viewModelScope.launch {
+            runCatching { exportService.importFromUri(context, uri) }
+                .onSuccess { (w, l, m) ->
+                    importResult.value = "导入完成：愿望 $w、随手记 $l、记忆页 $m"
+                }
+                .onFailure { error.value = it.message ?: "导入失败" }
         }
     }
 }
@@ -222,23 +234,42 @@ private fun RemindSection(viewModel: SettingsViewModel, context: android.content
     }
 }
 
-/** 数据：JSON 导出。 */
+/** 数据：JSON 导出 + 导入。 */
 @Composable
 private fun DataSection(viewModel: SettingsViewModel, context: android.content.Context) {
     val exportPath by viewModel.exportPath.collectAsState()
+    val importResult by viewModel.importResult.collectAsState()
     val error by viewModel.error.collectAsState()
+    val filePicker = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { viewModel.import(context, it) }
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("导出备份", style = MaterialTheme.typography.titleSmall)
             Text(
-                "把全部愿望、随手记、已发生之书导出为一个 JSON 文件（存到应用外部存储 Documents/windveil/）。",
+                "把全部愿望、随手记、已发生之书导出为一个 JSON 文件（存到 Documents/windveil/）。",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Button(onClick = { viewModel.export(context) }) { Text("导出 JSON") }
             exportPath?.let {
                 Text("已导出：$it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("导入备份", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "选择之前导出的 JSON 文件。按 ID 合并：已有条目会被备份内容覆盖，不会删除现有数据。",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Button(onClick = { filePicker.launch(arrayOf("application/json")) }) { Text("选择 JSON 文件导入") }
+            importResult?.let {
+                Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 }
