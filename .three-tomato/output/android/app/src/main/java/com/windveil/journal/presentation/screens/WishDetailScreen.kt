@@ -24,6 +24,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AlertDialog
+import android.Manifest
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -50,6 +54,12 @@ class WishDetailViewModel @Inject constructor(
     val degradedNote = MutableStateFlow<String?>(null)
     val proposal = MutableStateFlow<AnalysisService.TimingDraft?>(null)
 
+    fun hasCalendarPermission(): Boolean = repository.hasCalendarPermission()
+
+    fun amend(wishId: String, title: String) {
+        viewModelScope.launch { repository.amend(wishId, title, null) }
+    }
+
     fun loadHolidays() {
         holidayNames.value = repository.holidayNames()
         holidaysAvailable.value = repository.holidaysAvailable()
@@ -68,11 +78,12 @@ class WishDetailViewModel @Inject constructor(
         monthDay: String? = null,
         afterMonths: Int? = null,
         holidays: List<String>? = null,
+        writeCalendar: Boolean = true,
     ) {
         viewModelScope.launch {
             loading.value = true
             error.value = null
-            runCatching { repository.setTiming(wishId, timingType, season, monthDay, afterMonths, holidays) }
+            runCatching { repository.setTiming(wishId, timingType, season, monthDay, afterMonths, holidays, writeCalendar) }
                 .onFailure { error.value = it.message ?: "这个时机我还没法记下来" }
             loading.value = false
         }
@@ -175,7 +186,35 @@ private fun DetailBody(
     onBack: () -> Unit,
     onOpenMemory: (String) -> Unit,
 ) {
-    Text(current.title, style = MaterialTheme.typography.headlineSmall)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Text(current.title, style = MaterialTheme.typography.headlineSmall)
+        var showEdit by remember { mutableStateOf(false) }
+        TextButton(onClick = { showEdit = true }) { Text("改一改") }
+        if (showEdit) {
+            var newTitle by remember { mutableStateOf(current.title) }
+            AlertDialog(
+                onDismissRequest = { showEdit = false },
+                title = { Text("改一改它") },
+                text = {
+                    OutlinedTextField(
+                        value = newTitle,
+                        onValueChange = { newTitle = it },
+                        label = { Text("标题") },
+                        singleLine = true,
+                    )
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        viewModel.amend(wishId, newTitle)
+                        showEdit = false
+                    }) { Text("保存") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEdit = false }) { Text("取消") }
+                },
+            )
+        }
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stateLabel(current.state), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
         Text(timingLabelOf(current), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
@@ -211,6 +250,44 @@ private fun TimingSection(
 ) {
     val holidayNames by viewModel.holidayNames.collectAsState()
     val holidaysAvailable by viewModel.holidaysAvailable.collectAsState()
+
+    var pending by remember { mutableStateOf<((Boolean) -> Unit)?>(null) }
+    var showConfirm by remember { mutableStateOf(false) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        if (viewModel.hasCalendarPermission()) showConfirm = true
+        else pending?.invoke(false)
+    }
+    fun requestSet(action: (Boolean) -> Unit) {
+        pending = action
+        if (viewModel.hasCalendarPermission()) showConfirm = true
+        else permissionLauncher.launch(
+            arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
+        )
+    }
+
+    if (showConfirm && pending != null) {
+        AlertDialog(
+            onDismissRequest = { showConfirm = false },
+            title = { Text("写进系统日历？") },
+            text = { Text("把这件事的提醒写进系统日历，到点由系统提醒你；也可以只在这里看到它。") },
+            confirmButton = {
+                Button(onClick = {
+                    showConfirm = false
+                    pending?.invoke(true)
+                    pending = null
+                }) { Text("写进日历") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = {
+                    showConfirm = false
+                    pending?.invoke(false)
+                    pending = null
+                }) { Text("只在应用里") }
+            },
+        )
+    }
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -254,7 +331,7 @@ private fun TimingSection(
                         }
                     }
                     Button(
-                        onClick = { viewModel.setTiming(wishId, "holiday", holidays = selected.value.toList()) },
+                        onClick = { requestSet { wc -> viewModel.setTiming(wishId, "holiday", holidays = selected.value.toList(), writeCalendar = wc) } },
                         enabled = selected.value.isNotEmpty(),
                     ) { Text("就这样定") }
                 }
@@ -269,7 +346,7 @@ private fun TimingSection(
                         modifier = Modifier.weight(1f),
                     )
                     Button(
-                        onClick = { viewModel.setTiming(wishId, "month_day", monthDay = dateText.trim()) },
+                        onClick = { requestSet { wc -> viewModel.setTiming(wishId, "month_day", monthDay = dateText.trim(), writeCalendar = wc) } },
                         enabled = dateText.matches(Regex("\\d{4}-\\d{2}-\\d{2}")),
                         modifier = Modifier.padding(start = 8.dp),
                     ) { Text("定在这天") }

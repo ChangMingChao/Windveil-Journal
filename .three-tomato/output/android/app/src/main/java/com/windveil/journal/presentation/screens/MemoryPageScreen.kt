@@ -55,9 +55,18 @@ class MemoryPageViewModel @Inject constructor(
     }
 
     /** S06 Step 16 → Step 19：收进书里。 */
-    fun publish(memoryId: String) {
+    fun delete(memoryId: String, onDeleted: () -> Unit) {
+        viewModelScope.launch {
+            repository.deleteMemory(memoryId)
+            onDeleted()
+        }
+    }
+
+    fun publish(memoryId: String, title: String?, cause: String?, process: String?, lastLine: String?) {
         viewModelScope.launch {
             loading.value = true
+            // 收进书里 = 保存编辑 + 发布（简化：去掉单独的保存按钮）
+            repository.updateMemory(memoryId, title, cause, process, lastLine)
             runCatching { repository.publishMemory(memoryId) }
                 .onFailure { error.value = it.message }
             loading.value = false
@@ -111,11 +120,14 @@ fun MemoryPageScreen(
             OutlinedTextField(value = lastLine, onValueChange = { lastLine = it }, label = { Text("最后一行") }, modifier = Modifier.fillMaxWidth())
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = { viewModel.save(memoryId, title, cause, process, lastLine) }) { Text("保存") }
                 if (current.status == "draft") {
-                    Button(onClick = { viewModel.publish(memoryId) }) { Text("收进书里") }
+                    Button(onClick = { viewModel.publish(memoryId, title, cause, process, lastLine) }) { Text("收进书里") }
                 } else {
                     Text("已入册", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                }
+                var confirmDelete by remember { mutableStateOf(false) }
+                TextButton(onClick = { if (confirmDelete) viewModel.delete(memoryId, onBack) else confirmDelete = true }) {
+                    Text(if (confirmDelete) "再点一次：删除这一页" else "删除", color = MaterialTheme.colorScheme.error)
                 }
             }
             if (loading) CircularProgressIndicator(Modifier.padding(8.dp))

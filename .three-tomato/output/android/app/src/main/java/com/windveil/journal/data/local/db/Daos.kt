@@ -36,6 +36,12 @@ interface LiteEventDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(event: LiteEventEntity)
 
+    @Update
+    suspend fun update(event: LiteEventEntity)
+
+    @Query("SELECT * FROM lite_events WHERE id = :id")
+    suspend fun get(id: String): LiteEventEntity?
+
     @Query("SELECT * FROM lite_events WHERE status = 'open' ORDER BY createdAt DESC")
     fun observeOpen(): Flow<List<LiteEventEntity>>
 
@@ -71,4 +77,7 @@ interface MemoryDao {
 
     @Query("SELECT * FROM memories")
     suspend fun all(): List<MemoryEntity>
+
+    @Query("DELETE FROM memories WHERE id = :id")
+    suspend fun delete(id: String)
 }

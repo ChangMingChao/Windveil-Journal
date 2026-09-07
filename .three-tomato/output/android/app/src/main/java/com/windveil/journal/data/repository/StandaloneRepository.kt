@@ -88,6 +88,24 @@ class StandaloneRepository @Inject constructor(
     /** near_term_todo 确认「就当成未来的事」（语义保留，单机无状态差异）。 */
     suspend fun keepAsFuture(wishId: String) = answerQuestion(wishId, null)
 
+    /** 心语 record 记入「未发生之地」：直接建愿望（心语已分类，不再静默分析）。 */
+    suspend fun seedWish(title: String, originalText: String): String {
+        val id = newId()
+        wishDao.insert(
+            WishEntity(
+                id = id,
+                title = title,
+                originalText = originalText,
+                source = "text",
+                state = "seeded",
+                timingType = null, timingValue = null, triggerKind = "none",
+                nextTriggerAt = null, timingOccurrence = null,
+                seededAt = now(), lastActivityAt = now(),
+            )
+        )
+        return id
+    }
+
     // ---------- 时机（S03）----------
 
     /** 六选项手动约定；计算成功后写系统日历（失败降级仅本地）。 */
@@ -98,6 +116,7 @@ class StandaloneRepository @Inject constructor(
         monthDay: String? = null,
         afterMonths: Int? = null,
         holidays: List<String>? = null,
+        writeCalendar: Boolean = true,
     ) {
         val wish = wishDao.get(wishId) ?: return
         val plan = TimingCalculator.plan(
@@ -106,7 +125,7 @@ class StandaloneRepository @Inject constructor(
             season = season, monthDay = monthDay, afterMonths = afterMonths,
             holidays = holidays, holidayData = holidayDataSource.toHolidayData(),
         )
-        applyPlan(wish, plan)
+        applyPlan(wish, plan, writeCalendar)
     }
 
     /** 「让它提个时候」：心语模型建议时机类型（仅 4 种时间类），分析不出降级返回 null。 */
@@ -133,8 +152,8 @@ class StandaloneRepository @Inject constructor(
         applyPlan(wish, plan)
     }
 
-    /** 采纳时机计划（写 wish + 日历）。 */
-    suspend fun applyPlan(wish: WishEntity, plan: TimingCalculator.Plan) {
+    /** 采纳时机计划（写 wish + 可选日历）。 */
+    suspend fun applyPlan(wish: WishEntity, plan: TimingCalculator.Plan, writeCalendar: Boolean = true) {
         val updated = wish.copy(
             state = if (plan.timingType == "none") "seeded" else "brewing",
             timingType = plan.timingType,
@@ -146,8 +165,8 @@ class StandaloneRepository @Inject constructor(
             lastActivityAt = now(),
         )
         wishDao.update(updated)
-        // 写系统日历（未授权/失败降级为仅 App 内展示）
-        if (plan.triggerKind == "time" && plan.nextTriggerAt != null) {
+        // 写系统日历（用户确认后写入；未授权/失败降级为仅 App 内展示）
+        if (writeCalendar && plan.triggerKind == "time" && plan.nextTriggerAt != null) {
             val uri = calendarReminder.schedule(
                 wishId = wish.id,
                 title = "风来了：${wish.title}",
@@ -317,6 +336,18 @@ class StandaloneRepository @Inject constructor(
     suspend fun markLiteEventDone(id: String) = liteDao.markDone(id, now())
     suspend fun deleteLiteEvent(id: String) = liteDao.delete(id)
 
+    /** 编辑轻事件（文本 + 备注 + 照片 JSON）。 */
+    suspend fun updateLiteEvent(id: String, text: String, note: String?, photos: String?) {
+        liteDao.get(id)?.let {
+            liteDao.update(it.copy(text = text, note = note?.takeIf { n -> n.isNotBlank() }, photos = photos))
+        }
+    }
+
+    suspend fun getLiteEvent(id: String): com.windveil.journal.data.local.db.LiteEventEntity? = liteDao.get(id)
+
+    /** 删除记忆页（已发生之书 CRUD）。 */
+    suspend fun deleteMemory(id: String) = memoryDao.delete(id)
+
     // ---------- 彻底删除 ----------
 
     suspend fun deleteWishPermanently(wishId: String) {
@@ -324,6 +355,9 @@ class StandaloneRepository @Inject constructor(
         calendarReminder.cancelAllForWish(wishId)
         wishDao.delete(wishId)
     }
+
+    /** 日历权限是否已授予（详情页定时机前的确认弹窗判断）。 */
+    fun hasCalendarPermission(): Boolean = calendarReminder.hasPermission()
 
     // ---------- 节假日枚举（详情页多选器）----------
 

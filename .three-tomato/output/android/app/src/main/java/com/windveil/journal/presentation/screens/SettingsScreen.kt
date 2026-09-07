@@ -48,6 +48,7 @@ class SettingsViewModel @Inject constructor(
     val llmConfig = MutableStateFlow<LlmConfig?>(null)
     val calendarGranted = MutableStateFlow(false)
     val exportPath = MutableStateFlow<String?>(null)
+    val savedFlag = MutableStateFlow(0) // 每次保存 +1，UI 据此弹「已保存」
     val error = MutableStateFlow<String?>(null)
 
     fun refresh(context: android.content.Context) {
@@ -59,6 +60,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             llmConfigStore.save(LlmConfig(baseUrl.trim(), apiKey.trim(), model.trim()))
             llmConfig.value = llmConfigStore.current()
+            savedFlag.value = savedFlag.value + 1
         }
     }
 
@@ -161,6 +163,13 @@ private fun SectionScaffold(title: String, onBackToRoot: () -> Unit, content: @C
 /** 心语与模型：LLM 配置。 */
 @Composable
 private fun HeartModelSection(viewModel: SettingsViewModel) {
+    val savedFlag by viewModel.savedFlag.collectAsState()
+    val context = LocalContext.current
+    LaunchedEffect(savedFlag) {
+        if (savedFlag > 0) {
+            android.widget.Toast.makeText(context, "已保存", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text("大模型配置（心语用）", style = MaterialTheme.typography.titleSmall)

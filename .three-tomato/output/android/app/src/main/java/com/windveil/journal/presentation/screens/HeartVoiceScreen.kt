@@ -55,10 +55,14 @@ private const val CLASSIFY_PROMPT = """你是「未发生事件管理局」的�
 
 只输出 JSON：{"intent":"ask 或 record 或 chat"}"""
 
-private const val RECORD_PROMPT = """你是「未发生事件管理局」的心语助手。用户陈述了一件值得记下的事。
-用一句不超过 30 字的中性记录概括它（例如「我想去吃自助」→「想去吃自助」）。
-语气温柔不评判，禁止出现「任务」「逾期」「未完成」等词。
-只输出 JSON：{"reply":"给你的回应（1 句）","lite_event":"记录内容"}"""
+private const val RECORD_PROMPT = """你是「未发生事件管理局」的心语助手。用户陈述了一件想记录的事，先判断它属于哪类：
+- "wish"：未来想做的事、愿望、计划（想去滑雪、想去看海、想学画画）→ 记到「未发生之地」
+- "lite"：当下的小事、随手记（今晚取快递、想吃自助）→ 记到「随手记」
+
+只输出 JSON：
+{"target":"wish 或 lite","title":"愿望标题 ≤30字（wish 时给，lite 时 null）","lite_event":"中性记录 ≤30字（lite 时给，wish 时 null）","reply":"给用户的一句话回应"}
+
+语气温柔不评判，禁止出现「任务」「逾期」「未完成」等词。"""
 
 private fun askPrompt(contextBlock: String) = """你是「未发生事件管理局」的心语助手。用户在征求建议，请基于他的个人记录回答。
 
@@ -66,11 +70,12 @@ private fun askPrompt(contextBlock: String) = """你是「未发生事件管理�
 $contextBlock
 
 回答要求：
-- 优先从记录里找依据来建议（如记录过「想吃自助」就提示可以考虑）；引用时说「你某天记过/你想过……」
-- 如果记录之间存在冲突（如既记过「想吃自助」又记过「在减肥」），温柔地都摆出来并给出排序与理由，不评判
-- 没有相关记录就直接正常回答，并说明「记录里还没找到相关的」
+- 优先从记录里找依据建议（如记录过「想吃自助」就提示可以考虑），引用时说「你某天记过/你想过……」
+- 记录之间有冲突（如既想「吃自助」又在「减肥」），温柔地都摆出来给排序与理由，不评判
+- 记录为空或与当前问题无关时：理解用户其实想要「换个思路、新选择」，直接给出该话题下 3 个左右具体的常识性建议，不要说「没找到记录」
+- 即使有记录，也可在合适时补 1 个记录之外的新想法，但必须标注「这是记录之外的新想法」，且把与记录相关的排在前面
 - 语气温柔不催促，禁止出现「任务」「逾期」「未完成」等词
-- 回答控制在 4 句以内
+- 回答控制在 5 句以内
 直接输出建议文本，不要 JSON。"""
 
 data class HeartVoiceMessage(
@@ -119,20 +124,22 @@ class HeartVoiceViewModel @Inject constructor(
 
             when (intent) {
                 "record" -> {
-                    // 阶段2a：记录
+                    // 阶段2a：二分类记录（未来愿望 → 未发生之地；当下小事 → 随手记）
                     runCatching {
                         val content = heartVoiceClient.chat(cfg, RECORD_PROMPT, listOf(HeartVoiceClient.Turn("user", trimmed)))
-                        val result = Gson().fromJson(cleanJson(content), HeartVoiceResult::class.java)
-                        var recorded: String? = null
-                        if (!result.liteEvent.isNullOrBlank()) {
+                        val result = Gson().fromJson(cleanJson(content), RecordResult::class.java)
+                        val reply = result.reply ?: "嗯，我记下了。"
+                        if (result.target == "wish" && !result.title.isNullOrBlank()) {
+                            repository.seedWish(result.title.take(60), result.title.take(60))
+                            messages.value = messages.value + HeartVoiceMessage("assistant", "记到「未发生之地」了：${result.title}", null)
+                        } else if (!result.liteEvent.isNullOrBlank()) {
+                            var recorded: String? = null
                             runCatching { repository.createLiteEvent(result.liteEvent.take(200)) }
                                 .onSuccess { recorded = result.liteEvent }
+                            messages.value = messages.value + HeartVoiceMessage("assistant", reply, recorded)
+                        } else {
+                            messages.value = messages.value + HeartVoiceMessage("assistant", reply, null)
                         }
-                        messages.value = messages.value + HeartVoiceMessage(
-                            role = "assistant",
-                            text = result.reply ?: "嗯，我记下了。",
-                            recorded = recorded,
-                        )
                     }.onFailure { e ->
                         messages.value = messages.value + HeartVoiceMessage("assistant", "这会儿没连上模型，等一下再试试。")
                         error.value = e.message
@@ -280,6 +287,14 @@ fun HeartVoiceScreen(viewModel: HeartVoiceViewModel = hiltViewModel()) {
 }
 
 private data class IntentResult(val intent: String = "chat")
+
+/** record 二分类结果。 */
+private data class RecordResult(
+    val target: String = "lite", // wish | lite
+    val title: String? = null,
+    @com.google.gson.annotations.SerializedName("lite_event") val liteEvent: String? = null,
+    val reply: String? = null,
+)
 
 /** 心语 JSON 结果（模型返回）。 */
 data class HeartVoiceResult(

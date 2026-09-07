@@ -39,6 +39,9 @@ data class LiteEventEntity(
     val status: String, // open | done
     val createdAt: String,
     val closedAt: String? = null,
+    // 相关信息（android-ux-crud 第 8 条）：文字备注 + 照片（本地路径，JSON 数组）
+    val note: String? = null,
+    val photos: String? = null, // JSON array of path
 )
 
 /** 记忆页（S06）：草稿 → 发布。 */
