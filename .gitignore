@@ -8,6 +8,8 @@ android/build/
 android/app/build/
 android/local.properties
 *.apk
+# 例外：release 目录的发布 APK 需要入库供直接下载
+!release/*.apk
 *.aab
 
 # 通用构建产物与缓存
