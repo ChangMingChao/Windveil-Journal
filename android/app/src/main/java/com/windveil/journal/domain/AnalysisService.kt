@@ -42,9 +42,7 @@ class AnalysisService @Inject constructor(
         if (config?.usable != true) return null
         return runCatching {
             val content = heartVoiceClient.chat(config, understandingPrompt(wishText), emptyList())
-            val cleaned = content.trim()
-                .removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-            val obj = JSONObject(cleaned)
+            val obj = LlmJson.extractObject(content)?.let { JSONObject(it) } ?: return@runCatching null
             Understanding(
                 kind = obj.optString("kind", "future_wish"),
                 feeling = obj.optString("feeling", "").takeIf { it.isNotBlank() },
@@ -64,8 +62,8 @@ class AnalysisService @Inject constructor(
 {"step":"步骤描述（40 字内）"}"""
         return runCatching {
             val content = heartVoiceClient.chat(config, prompt, emptyList())
-            val cleaned = content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-            JSONObject(cleaned).optString("step", "").takeIf { it.isNotBlank() }
+            val obj = LlmJson.extractObject(content)?.let { JSONObject(it) } ?: return@runCatching null
+            obj.optString("step", "").takeIf { it.isNotBlank() }
         }.getOrNull()
     }
 
@@ -88,8 +86,7 @@ class AnalysisService @Inject constructor(
 {"type":"season 或 month_day 或 after_months 或 holiday","value":"对应参数","reason":"一句温柔的理由（30 字内）"}"""
         return runCatching {
             val content = heartVoiceClient.chat(config, prompt, emptyList())
-            val cleaned = content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-            val obj = JSONObject(cleaned)
+            val obj = LlmJson.extractObject(content)?.let { JSONObject(it) } ?: return@runCatching null
             val type = obj.optString("type", "")
             val allowed = setOf("season", "month_day", "after_months", "holiday")
             if (type !in allowed) return@runCatching null
@@ -119,8 +116,7 @@ class AnalysisService @Inject constructor(
 只输出 JSON：{"items":[{"pref_key":"有空时间/运动偏好/饮食倾向/其他偏好","value":"...","source":"declared 或 inferred"}]}"""
         return runCatching {
             val content = heartVoiceClient.chat(config, prompt, emptyList())
-            val cleaned = content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-            val obj = JSONObject(cleaned)
+            val obj = LlmJson.extractObject(content)?.let { JSONObject(it) } ?: return@runCatching emptyList()
             val items = obj.optJSONArray("items") ?: return@runCatching emptyList()
             (0 until items.length()).mapNotNull { i ->
                 val item = items.optJSONObject(i) ?: return@mapNotNull null

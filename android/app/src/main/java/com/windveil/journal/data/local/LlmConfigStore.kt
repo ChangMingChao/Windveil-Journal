@@ -1,6 +1,7 @@
 package com.windveil.journal.data.local
 
 import android.content.Context
+import android.net.Uri
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -39,10 +40,20 @@ class LlmConfigStore @Inject constructor(@ApplicationContext private val context
     suspend fun current(): LlmConfig? = config.first()
 
     suspend fun save(config: LlmConfig) {
+        requireBaseUrl(config.baseUrl)
         context.llmDataStore.edit {
             it[baseUrlKey] = config.baseUrl
             it[apiKeyKey] = config.apiKey
             it[modelKey] = config.model
+        }
+    }
+
+    private fun requireBaseUrl(rawUrl: String) {
+        val url = runCatching { Uri.parse(rawUrl) }.getOrNull()
+        val scheme = url?.scheme?.lowercase()
+        val host = url?.host
+        if (scheme != "https" || host.isNullOrBlank() || rawUrl.contains(Regex("\\s"))) {
+            throw IllegalArgumentException("接口地址必须是完整的 HTTPS 地址")
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.windveil.journal.presentation.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,7 +24,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -36,10 +36,9 @@ import com.windveil.journal.data.local.LlmConfigStore
 import com.windveil.journal.domain.CalendarReminder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.io.File
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 @HiltViewModel
@@ -53,9 +52,12 @@ class SettingsViewModel @Inject constructor(
     val calendarGranted = MutableStateFlow(false)
     val exportPath = MutableStateFlow<String?>(null)
     val importResult = MutableStateFlow<String?>(null)
-    val preferences = MutableStateFlow<List<com.windveil.journal.data.local.db.PreferenceEntity>>(emptyList())
+    val preferencesFlow = repository.observePreferences()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val savedFlag = MutableStateFlow(0) // 每次保存 +1，UI 据此弹「已保存」
     val error = MutableStateFlow<String?>(null)
+    /** 导出/导入进行中：按钮置灰防重复触发（照片多时耗时明显）。 */
+    val busy = MutableStateFlow(false)
 
     fun refresh(context: android.content.Context) {
         viewModelScope.launch { llmConfig.value = llmConfigStore.current() }
@@ -64,15 +66,14 @@ class SettingsViewModel @Inject constructor(
 
     fun saveLlmConfig(baseUrl: String, apiKey: String, model: String) {
         viewModelScope.launch {
-            llmConfigStore.save(LlmConfig(baseUrl.trim(), apiKey.trim(), model.trim()))
-            llmConfig.value = llmConfigStore.current()
-            savedFlag.value = savedFlag.value + 1
-        }
-    }
-
-    fun refreshPreferences() {
-        viewModelScope.launch {
-            repository.observePreferences().collect { preferences.value = it }
+            runCatching {
+                llmConfigStore.save(LlmConfig(baseUrl.trim(), apiKey.trim(), model.trim()))
+            }.onSuccess {
+                llmConfig.value = llmConfigStore.current()
+                savedFlag.value = savedFlag.value + 1
+            }.onFailure {
+                error.value = it.message ?: "模型配置没保存上"
+            }
         }
     }
 
@@ -87,21 +88,31 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun export(context: android.content.Context) {
+        if (busy.value) return
         viewModelScope.launch {
+            busy.value = true
             runCatching { exportService.exportToDownloads(context) }
                 .onSuccess { exportPath.value = it }
                 .onFailure { error.value = it.message }
+            busy.value = false
         }
     }
 
     fun import(context: android.content.Context, uri: android.net.Uri) {
+        if (busy.value) return
         viewModelScope.launch {
+            busy.value = true
             runCatching { exportService.importFromUri(context, uri) }
                 .onSuccess { (w, l, m) ->
                     importResult.value = "导入完成：愿望 $w、随手记 $l、记忆页 $m"
                 }
                 .onFailure { error.value = it.message ?: "导入失败" }
+            busy.value = false
         }
+    }
+
+    fun clearError() {
+        error.value = null
     }
 }
 
@@ -207,12 +218,39 @@ private fun HeartModelSection(viewModel: SettingsViewModel) {
             var baseUrl by remember(cfgNow?.baseUrl) { mutableStateOf(cfgNow?.baseUrl.orEmpty()) }
             var apiKey by remember(cfgNow?.apiKey) { mutableStateOf(cfgNow?.apiKey.orEmpty()) }
             var model by remember(cfgNow?.model) { mutableStateOf(cfgNow?.model.orEmpty()) }
-            OutlinedTextField(value = baseUrl, onValueChange = { baseUrl = it }, label = { Text("接口地址（如 https://api.xxx.com/v1）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, label = { Text("API Key") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
-            OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("模型名") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+            OutlinedTextField(
+                value = baseUrl,
+                onValueChange = {
+                    baseUrl = it
+                    viewModel.clearError()
+                },
+                label = { Text("接口地址（如 https://api.xxx.com/v1）") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = apiKey,
+                onValueChange = {
+                    apiKey = it
+                    viewModel.clearError()
+                },
+                label = { Text("API Key") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            )
+            OutlinedTextField(
+                value = model,
+                onValueChange = {
+                    model = it
+                    viewModel.clearError()
+                },
+                label = { Text("模型名") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            )
             Button(
                 onClick = { viewModel.saveLlmConfig(baseUrl, apiKey, model) },
-                enabled = baseUrl.contains("http") && apiKey.isNotBlank() && model.isNotBlank(),
+                enabled = baseUrl.startsWith("https://") && apiKey.isNotBlank() && model.isNotBlank(),
                 modifier = Modifier.padding(top = 8.dp),
             ) { Text("保存") }
             Text(
@@ -236,9 +274,7 @@ private fun ProfileEntryButton(onClick: () -> Unit) {
 /** 用户画像：条目列表，可删除（declared/inferred 都可删）。 */
 @Composable
 private fun ProfileSection(viewModel: SettingsViewModel) {
-    val preferences by viewModel.preferences.collectAsState()
-
-    LaunchedEffect(Unit) { viewModel.refreshPreferences() }
+    val preferences by viewModel.preferencesFlow.collectAsState()
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -298,6 +334,7 @@ private fun DataSection(viewModel: SettingsViewModel, context: android.content.C
     val exportPath by viewModel.exportPath.collectAsState()
     val importResult by viewModel.importResult.collectAsState()
     val error by viewModel.error.collectAsState()
+    val busy by viewModel.busy.collectAsState()
     val filePicker = rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -307,10 +344,10 @@ private fun DataSection(viewModel: SettingsViewModel, context: android.content.C
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("导出备份", style = MaterialTheme.typography.titleSmall)
             Text(
-                "把全部愿望、随手记、已发生之书导出为一个 JSON 文件（存到 Documents/windveil/）。",
+                "把全部愿望、随手记（含照片）、已发生之书导出为一个 JSON 文件（存到 Documents/windveil/）。",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Button(onClick = { viewModel.export(context) }) { Text("导出 JSON") }
+            Button(onClick = { viewModel.export(context) }, enabled = !busy) { Text(if (busy) "正在导出…" else "导出 JSON") }
             exportPath?.let {
                 Text("已导出：$it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             }
@@ -323,7 +360,10 @@ private fun DataSection(viewModel: SettingsViewModel, context: android.content.C
                 "选择之前导出的 JSON 文件。按 ID 合并：已有条目会被备份内容覆盖，不会删除现有数据。",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Button(onClick = { filePicker.launch(arrayOf("application/json")) }) { Text("选择 JSON 文件导入") }
+            Button(
+                onClick = { filePicker.launch(arrayOf("application/json")) },
+                enabled = !busy,
+            ) { Text(if (busy) "正在导入…" else "选择 JSON 文件导入") }
             importResult?.let {
                 Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }

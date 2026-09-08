@@ -10,7 +10,10 @@ import com.windveil.journal.domain.AnalysisService
 import com.windveil.journal.domain.CalendarReminder
 import com.windveil.journal.domain.HolidayDataSource
 import com.windveil.journal.domain.TimingCalculator
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.Flow
+import android.util.Base64
+import androidx.room.withTransaction
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -107,6 +110,19 @@ class StandaloneRepository @Inject constructor(
         return id
     }
 
+    /** 「先记一下」的原子转换：删除愿望并创建同文本轻事件。 */
+    suspend fun convertWishToLiteEvent(wishId: String): String? = db.withTransaction {
+        val wish = wishDao.get(wishId) ?: return@withTransaction null
+        val text = wish.originalText ?: wish.title
+        calendarReminder.cancelAllForWish(wishId)
+        wishDao.delete(wishId)
+        val liteId = newId()
+        liteDao.insert(
+            LiteEventEntity(id = liteId, text = text.take(200), status = "open", createdAt = now())
+        )
+        liteId
+    }
+
     // ---------- 时机（S03）----------
 
     /** 六选项手动约定；计算成功后写系统日历（失败降级仅本地）。 */
@@ -155,6 +171,8 @@ class StandaloneRepository @Inject constructor(
 
     /** 采纳时机计划（写 wish + 可选日历）。 */
     suspend fun applyPlan(wish: WishEntity, plan: TimingCalculator.Plan, writeCalendar: Boolean = true) {
+        calendarReminder.cancel(wish.calendarEventUri)
+        calendarReminder.cancelAllForWish(wish.id)
         val updated = wish.copy(
             state = if (plan.timingType == "none") "seeded" else "brewing",
             timingType = plan.timingType,
@@ -163,6 +181,7 @@ class StandaloneRepository @Inject constructor(
             nextTriggerAt = plan.nextTriggerAt?.let { TimingCalculator.isoInstant(it) },
             timingOccurrence = plan.occurrence,
             softDeferred = false,
+            calendarEventUri = null,
             lastActivityAt = now(),
         )
         wishDao.update(updated)
@@ -174,29 +193,24 @@ class StandaloneRepository @Inject constructor(
                 triggerAt = plan.nextTriggerAt,
                 occurrence = plan.occurrence,
             )
-            // eventUri 存在 timeline JSON 里（复用字段，前缀标记）
-            updated.copy(timeline = gson.toJson(mapOf("calendarEvent" to uri)))
-                .let { wishDao.update(it) }
+            if (uri != null) {
+                wishDao.update(updated.copy(calendarEventUri = uri))
+            }
         }
     }
 
     /** 撤销时机（暂时不提醒 / 换时机前调用）。 */
     suspend fun clearTiming(wishId: String) {
         val wish = wishDao.get(wishId) ?: return
-        calendarReminder.cancel(calendarUriOf(wish))
+        calendarReminder.cancel(wish.calendarEventUri)
         wishDao.update(
             wish.copy(
                 timingType = null, timingValue = null, triggerKind = "none",
                 nextTriggerAt = null, timingOccurrence = null,
-                state = "seeded", lastActivityAt = now(),
+                state = "seeded", calendarEventUri = null, lastActivityAt = now(),
             )
         )
     }
-
-    private fun calendarUriOf(wish: WishEntity): String? = runCatching {
-        val type = object : com.google.gson.reflect.TypeToken<Map<String, String>>() {}.type
-        gson.fromJson<Map<String, String>>(wish.timeline ?: "{}", type)["calendarEvent"]
-    }.getOrNull()
 
     // ---------- 状态动作（S04/S05/S07 语义保留）----------
 
@@ -221,7 +235,7 @@ class StandaloneRepository @Inject constructor(
     suspend fun letGo(wishId: String) {
         val wish = wishDao.get(wishId) ?: return
         if (wish.state == "happened") return
-        calendarReminder.cancel(calendarUriOf(wish))
+        calendarReminder.cancel(wish.calendarEventUri)
         wishDao.update(
             wish.copy(state = "let_go", letGoAt = now(), nextTriggerAt = null, timingOccurrence = null, lastActivityAt = now())
         )
@@ -285,7 +299,7 @@ class StandaloneRepository @Inject constructor(
 
     suspend fun markHappened(wishId: String, happenedFrom: String, happenedTo: String? = null): String {
         val wish = wishDao.get(wishId) ?: return ""
-        calendarReminder.cancel(calendarUriOf(wish))
+        calendarReminder.cancel(wish.calendarEventUri)
         val memoryId = newId()
         memoryDao.insert(
             MemoryEntity(
@@ -399,11 +413,28 @@ class StandaloneRepository @Inject constructor(
 
     // ---------- 数据导出 ----------
 
-    suspend fun exportJson(): String {
+    suspend fun exportJson(readPhoto: (String) -> ByteArray?): String {
         val payload = mapOf(
+            "schema_version" to 2,
             "exported_at" to now(),
             "wishes" to wishDao.all(),
-            "lite_events" to liteDao.all(),
+            "lite_events" to liteDao.all().map { event ->
+                val photos = decodePhotoPaths(event.photos)
+                mapOf(
+                    "id" to event.id,
+                    "text" to event.text,
+                    "status" to event.status,
+                    "createdAt" to event.createdAt,
+                    "closedAt" to event.closedAt,
+                    "note" to event.note,
+                    "photos" to photos.map { path ->
+                        mapOf(
+                            "path" to path,
+                            "data" to readPhoto(path)?.let { Base64.encodeToString(it, Base64.NO_WRAP) },
+                        )
+                    },
+                )
+            },
             "memories" to memoryDao.all(),
         )
         return gson.toJson(payload)
@@ -412,95 +443,129 @@ class StandaloneRepository @Inject constructor(
     /**
      * 导入备份（standalone-mode 补全）：按 ID 合并——同 ID 覆盖、新 ID 插入，不删现有数据。
      * 返回 (wishes, liteEvents, memories) 三类各自导入的条数。
-     * 注意：照片路径指向导出设备本机目录，导入时校验文件存在，无效路径丢弃（照片存 null）。
+     * 备份格式 v2 会内嵌照片数据；v1 只保留本机仍存在的路径。
      */
-    suspend fun importJson(json: String, sanitizePhotos: (List<String>) -> List<String> = { it }): Triple<Int, Int, Int> {
+    suspend fun importJson(
+        json: String,
+        writePhoto: (String, ByteArray) -> String?,
+        sanitizePhotos: (List<String>) -> List<String> = { it },
+    ): Triple<Int, Int, Int> {
         val type = object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type
-        val payload: Map<String, Any> = gson.fromJson(json, type)
-
-        fun decodeList(raw: Any?): List<Map<String, Any>> {
-            val listJson = gson.toJson(raw ?: return emptyList())
-            return gson.fromJson(listJson, object : com.google.gson.reflect.TypeToken<List<Map<String, Any>>>() {}.type)
-        }
-
-        fun str(m: Map<String, Any>, key: String): String? = (m[key] as? String)?.takeIf { it != "null" }
-        fun bool(m: Map<String, Any>, key: String): Boolean = m[key] == true
-
-        var wishCount = 0
-        for (m in decodeList(payload["wishes"])) {
-            val id = str(m, "id") ?: continue
-            wishDao.insert(
-                WishEntity(
-                    id = id,
-                    title = str(m, "title") ?: "",
-                    originalText = str(m, "originalText"),
-                    source = str(m, "source") ?: "text",
-                    state = str(m, "state") ?: "seeded",
-                    timingType = str(m, "timingType"),
-                    timingValue = str(m, "timingValue"),
-                    triggerKind = str(m, "triggerKind") ?: "none",
-                    nextTriggerAt = str(m, "nextTriggerAt"),
-                    timingOccurrence = str(m, "timingOccurrence"),
-                    softDeferred = bool(m, "softDeferred"),
-                    letGoAt = str(m, "letGoAt"),
-                    seededAt = str(m, "seededAt") ?: now(),
-                    lastActivityAt = str(m, "lastActivityAt") ?: now(),
-                    understanding = str(m, "understanding"),
-                    pendingQuestion = str(m, "pendingQuestion"),
-                    currentStep = str(m, "currentStep"),
-                    timeline = str(m, "timeline"),
-                    amendedFrom = str(m, "amendedFrom"),
-                )
-            )
-            wishCount++
-        }
-
-        var liteCount = 0
-        for (m in decodeList(payload["lite_events"])) {
-            val id = str(m, "id") ?: continue
-            // 照片路径指向导出设备的目录：导入时过滤掉本机不存在的文件
-            val photosJson = str(m, "photos")?.let { photosStr ->
-                val paths = runCatching {
-                    gson.fromJson<List<String>>(photosStr, object : com.google.gson.reflect.TypeToken<List<String>>() {}.type)
-                }.getOrDefault(emptyList())
-                val valid = sanitizePhotos(paths)
-                if (valid.isEmpty()) null else gson.toJson(valid)
+        return db.withTransaction {
+            val payload: Map<String, Any> = gson.fromJson(json, type)
+            val schemaVersion = (payload["schema_version"] as? Double)?.toInt()
+            if (schemaVersion != null && schemaVersion > 2) {
+                throw IllegalArgumentException("备份格式太新，请先升级风起簿")
             }
-            liteDao.insert(
-                LiteEventEntity(
-                    id = id,
-                    text = str(m, "text") ?: "",
-                    status = str(m, "status") ?: "open",
-                    createdAt = str(m, "createdAt") ?: now(),
-                    closedAt = str(m, "closedAt"),
-                    note = str(m, "note"),
-                    photos = photosJson,
-                )
-            )
-            liteCount++
-        }
 
-        var memCount = 0
-        for (m in decodeList(payload["memories"])) {
-            val id = str(m, "id") ?: continue
-            memoryDao.insert(
-                MemoryEntity(
-                    id = id,
-                    wishId = str(m, "wishId") ?: "",
-                    title = str(m, "title") ?: "",
-                    happenedFrom = str(m, "happenedFrom") ?: "",
-                    happenedTo = str(m, "happenedTo"),
-                    cause = str(m, "cause"),
-                    process = str(m, "process"),
-                    mood = str(m, "mood"),
-                    lastLine = str(m, "lastLine"),
-                    status = str(m, "status") ?: "published",
-                    publishedAt = str(m, "publishedAt"),
-                    createdAt = str(m, "createdAt") ?: now(),
+            fun decodeList(raw: Any?): List<Map<String, Any>> {
+                val listJson = gson.toJson(raw ?: return emptyList())
+                return gson.fromJson(listJson, object : TypeToken<List<Map<String, Any>>>() {}.type)
+            }
+
+            fun str(m: Map<String, Any>, key: String): String? = (m[key] as? String)?.takeIf { it != "null" }
+            fun bool(m: Map<String, Any>, key: String): Boolean = m[key] == true
+
+            var wishCount = 0
+            for (m in decodeList(payload["wishes"])) {
+                val id = str(m, "id") ?: continue
+                wishDao.insert(
+                    WishEntity(
+                        id = id,
+                        title = str(m, "title") ?: "",
+                        originalText = str(m, "originalText"),
+                        source = str(m, "source") ?: "text",
+                        state = str(m, "state") ?: "seeded",
+                        timingType = str(m, "timingType"),
+                        timingValue = str(m, "timingValue"),
+                        triggerKind = str(m, "triggerKind") ?: "none",
+                        nextTriggerAt = str(m, "nextTriggerAt"),
+                        timingOccurrence = str(m, "timingOccurrence"),
+                        softDeferred = bool(m, "softDeferred"),
+                        letGoAt = str(m, "letGoAt"),
+                        seededAt = str(m, "seededAt") ?: now(),
+                        lastActivityAt = str(m, "lastActivityAt") ?: now(),
+                        understanding = str(m, "understanding"),
+                        pendingQuestion = str(m, "pendingQuestion"),
+                        currentStep = str(m, "currentStep"),
+                        timeline = str(m, "timeline"),
+                        amendedFrom = str(m, "amendedFrom"),
+                        calendarEventUri = null,
+                    )
                 )
-            )
-            memCount++
+                wishCount++
+            }
+
+            var liteCount = 0
+            for (m in decodeList(payload["lite_events"])) {
+                val id = str(m, "id") ?: continue
+                val photos = decodePhotosForImport(m["photos"], schemaVersion, writePhoto, sanitizePhotos)
+                liteDao.insert(
+                    LiteEventEntity(
+                        id = id,
+                        text = str(m, "text") ?: "",
+                        status = str(m, "status") ?: "open",
+                        createdAt = str(m, "createdAt") ?: now(),
+                        closedAt = str(m, "closedAt"),
+                        note = str(m, "note"),
+                        photos = photos.takeIf { it.isNotEmpty() }?.let { gson.toJson(it) },
+                    )
+                )
+                liteCount++
+            }
+
+            var memCount = 0
+            for (m in decodeList(payload["memories"])) {
+                val id = str(m, "id") ?: continue
+                memoryDao.insert(
+                    MemoryEntity(
+                        id = id,
+                        wishId = str(m, "wishId") ?: "",
+                        title = str(m, "title") ?: "",
+                        happenedFrom = str(m, "happenedFrom") ?: "",
+                        happenedTo = str(m, "happenedTo"),
+                        cause = str(m, "cause"),
+                        process = str(m, "process"),
+                        mood = str(m, "mood"),
+                        lastLine = str(m, "lastLine"),
+                        status = str(m, "status") ?: "published",
+                        publishedAt = str(m, "publishedAt"),
+                        createdAt = str(m, "createdAt") ?: now(),
+                    )
+                )
+                memCount++
+            }
+            return@withTransaction Triple(wishCount, liteCount, memCount)
         }
-        return Triple(wishCount, liteCount, memCount)
+    }
+
+    private fun decodePhotoPaths(json: String?): List<String> = runCatching {
+        val type = object : TypeToken<List<String>>() {}.type
+        gson.fromJson<List<String>>(json ?: "[]", type)
+    }.getOrDefault(emptyList())
+
+    private fun decodePhotosForImport(
+        raw: Any?,
+        schemaVersion: Int?,
+        writePhoto: (String, ByteArray) -> String?,
+        sanitizePhotos: (List<String>) -> List<String>,
+    ): List<String> {
+        val listJson = gson.toJson(raw ?: return emptyList())
+        if (schemaVersion == null) {
+            // v1 备份：photos 是纯路径数组，只保留本机仍存在的文件
+            val type = object : TypeToken<List<String>>() {}.type
+            val paths: List<String> = gson.fromJson(listJson, type)
+            return sanitizePhotos(paths)
+        }
+        // v2 备份：photos 是 [{path, data(base64)}]，落地成本机新文件
+        val type = object : TypeToken<List<Map<String, Any?>>>() {}.type
+        val entries: List<Map<String, Any?>> = gson.fromJson(listJson, type)
+        return entries.mapNotNull { entry ->
+            val data = entry["data"] as? String ?: return@mapNotNull null
+            val bytes = runCatching { Base64.decode(data, Base64.DEFAULT) }.getOrNull()
+                ?: return@mapNotNull null
+            val sourcePath = entry["path"] as? String
+            writePhoto(sourcePath ?: newId(), bytes)
+        }
     }
 }

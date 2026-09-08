@@ -1,11 +1,16 @@
 package com.windveil.journal.presentation.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -13,9 +18,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.AlertDialog
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,11 +35,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import coil.compose.AsyncImage
 import com.windveil.journal.data.local.db.LiteEventEntity
 import com.windveil.journal.data.repository.StandaloneRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -45,6 +49,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import java.io.File
 
 @HiltViewModel
 class LiteEventsViewModel @Inject constructor(
@@ -66,6 +71,21 @@ class LiteEventsViewModel @Inject constructor(
     fun delete(eventId: String) = viewModelScope.launch { repository.deleteLiteEvent(eventId) }
     fun update(eventId: String, text: String, note: String?, photos: String?) =
         viewModelScope.launch { repository.updateLiteEvent(eventId, text, note, photos) }
+
+    /** 删除单张照片时顺带清理本机文件（避免 filesDir 里堆积孤儿文件）。 */
+    fun removePhoto(eventId: String, path: String) {
+        viewModelScope.launch {
+            val event = repository.getLiteEvent(eventId) ?: return@launch
+            val remaining = parsePhotos(event.photos.orEmpty()) - path
+            repository.updateLiteEvent(
+                eventId,
+                event.text,
+                event.note,
+                remaining.takeIf { it.isNotEmpty() }?.let { com.google.gson.Gson().toJson(it) },
+            )
+            runCatching { File(path).delete() }
+        }
+    }
 }
 
 /** S09：先记一下并随手划掉 —— 无 Agent、无提醒路径、不占提醒额度。 */
@@ -114,25 +134,24 @@ fun LiteEventsScreen(
             items(events, key = { it.id }) { event ->
                 var showEdit by remember(event.id) { mutableStateOf(false) }
                 Card(Modifier.fillMaxWidth()) {
-                    Row(
-                        Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f).clickable { showEdit = true }) {
-                            Text(event.text, style = MaterialTheme.typography.bodyMedium)
-                            event.note?.let {
-                                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f).clickable { showEdit = true }) {
+                                Text(event.text, style = MaterialTheme.typography.bodyMedium)
+                                event.note?.let {
+                                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                                }
                             }
-                            val photos = event.photos?.let { parsePhotos(it) }.orEmpty()
-                            if (photos.isNotEmpty()) {
-                                Text("已附 ${photos.size} 张照片", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                            IconButton(onClick = { viewModel.markDone(event.id) }) {
+                                Icon(Icons.Filled.Check, contentDescription = "划掉了")
+                            }
+                            IconButton(onClick = { viewModel.delete(event.id) }) {
+                                Icon(Icons.Filled.Close, contentDescription = "收走")
                             }
                         }
-                        IconButton(onClick = { viewModel.markDone(event.id) }) {
-                            Icon(Icons.Filled.Check, contentDescription = "划掉了")
-                        }
-                        IconButton(onClick = { viewModel.delete(event.id) }) {
-                            Icon(Icons.Filled.Close, contentDescription = "收走")
+                        val photos = event.photos?.let { parsePhotos(it) }.orEmpty()
+                        if (photos.isNotEmpty()) {
+                            PhotoStrip(photos)
                         }
                     }
                 }
@@ -146,6 +165,7 @@ fun LiteEventsScreen(
                             showEdit = false
                         },
                         onDismiss = { showEdit = false },
+                        onRemovePhoto = { path -> viewModel.removePhoto(event.id, path) },
                     )
                 }
             }
@@ -153,6 +173,35 @@ fun LiteEventsScreen(
     }
 }
 
+/** 已存照片的缩略图条（Coil 加载本机文件；点缩略图进编辑弹窗可删单张）。 */
+@Composable
+private fun PhotoStrip(photos: List<String>) {
+    Row(
+        Modifier.padding(top = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        photos.take(3).forEach { path ->
+            val file = remember(path) { File(path) }
+            if (file.isFile) {
+                AsyncImage(
+                    model = file,
+                    contentDescription = "随手记照片",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(64.dp),
+                )
+            }
+        }
+        if (photos.size > 3) {
+            Column(Modifier.size(64.dp), verticalArrangement = Arrangement.Center) {
+                Text(
+                    "+${photos.size - 3}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
 
 internal fun parsePhotos(json: String): List<String> = runCatching {
     com.google.gson.Gson().fromJson(
@@ -168,6 +217,7 @@ internal fun LiteEventEditDialog(
     initialPhotos: String?,
     onSave: (String, String?, String?) -> Unit,
     onDismiss: () -> Unit,
+    onRemovePhoto: (String) -> Unit = {},
 ) {
     var text by remember { mutableStateOf(initialText) }
     var note by remember { mutableStateOf(initialNote) }
@@ -193,11 +243,37 @@ internal fun LiteEventEditDialog(
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 2,
                 )
+                if (photos.isNotEmpty()) {
+                    // 缩略图 + 单张删除：点 × 只从这一条里移除并删本机文件
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        photos.forEach { path ->
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(Modifier.size(56.dp)) {
+                                    AsyncImage(
+                                        model = File(path),
+                                        contentDescription = "已选照片",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.size(56.dp),
+                                    )
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = "移除这张照片",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .size(18.dp)
+                                            .clickable {
+                                                onRemovePhoto(path)
+                                                photos = photos - path
+                                            },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
                 Button(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
                     Text(if (photos.isEmpty()) "添加照片（最多 9 张）" else "再加照片（已选 ${photos.size}/9）")
-                }
-                if (photos.isNotEmpty()) {
-                    Text("已选 ${photos.size} 张照片（存本机）", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         },
@@ -211,9 +287,21 @@ internal fun LiteEventEditDialog(
     )
 }
 
+/**
+ * 复制选中的图片到应用私有目录（#18）：按 ContentResolver 拿真实 MIME 定扩展名，
+ * 不再一律存 .jpg；文件名用时间戳 + 随机后缀。
+ */
 private fun copyToLocal(context: android.content.Context, uri: android.net.Uri): String? = runCatching {
+    val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+    val ext = when (mime) {
+        "image/png" -> "png"
+        "image/webp" -> "webp"
+        "image/gif" -> "gif"
+        "image/heic", "image/heif" -> "heic"
+        else -> "jpg"
+    }
     val dir = java.io.File(context.filesDir, "lite_photos").apply { mkdirs() }
-    val name = "photo_${System.currentTimeMillis()}_${(0..9999).random()}.jpg"
+    val name = "photo_${System.currentTimeMillis()}_${(0..9999).random()}.$ext"
     val out = java.io.File(dir, name)
     context.contentResolver.openInputStream(uri)?.use { input ->
         out.outputStream().use { input.copyTo(it) }

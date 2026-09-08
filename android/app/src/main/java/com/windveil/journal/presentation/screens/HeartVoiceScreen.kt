@@ -30,12 +30,15 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.gson.Gson
+import com.windveil.journal.data.local.HeartVoiceHistoryEntry
+import com.windveil.journal.data.local.HeartVoiceHistoryStore
 import com.windveil.journal.data.local.LlmConfig
 import com.windveil.journal.data.local.LlmConfigStore
 import com.windveil.journal.data.remote.HeartVoiceClient
 import com.windveil.journal.data.repository.StandaloneRepository
+import com.windveil.journal.domain.LlmJson
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -89,20 +92,33 @@ data class HeartVoiceMessage(
 class HeartVoiceViewModel @Inject constructor(
     private val llmConfigStore: LlmConfigStore,
     private val heartVoiceClient: HeartVoiceClient,
+    private val historyStore: HeartVoiceHistoryStore,
     private val repository: StandaloneRepository,
 ) : ViewModel() {
     val messages = MutableStateFlow<List<HeartVoiceMessage>>(emptyList())
     val loading = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
     val config = MutableStateFlow<LlmConfig?>(null)
+    private var sendJob: Job? = null
 
     init {
-        viewModelScope.launch { config.value = llmConfigStore.current() }
+        viewModelScope.launch {
+            config.value = llmConfigStore.current()
+            // 恢复上次对话（杀进程不丢；只恢复普通气泡，不恢复「已记下」标记）
+            messages.value = historyStore.load().map { HeartVoiceMessage(it.role, it.text) }
+        }
     }
 
     /** 每次进入重读配置（用户可能在「我的」页改过）。 */
     fun refreshConfig() {
         viewModelScope.launch { config.value = llmConfigStore.current() }
+    }
+
+    /** 用户主动停止本轮回答（取消网络协程；已入库的记录保留）。 */
+    fun stop() {
+        sendJob?.cancel()
+        sendJob = null
+        loading.value = false
     }
 
     fun send(text: String) {
@@ -114,34 +130,51 @@ class HeartVoiceViewModel @Inject constructor(
             return
         }
         messages.value = messages.value + HeartVoiceMessage("user", trimmed)
+        persist("user", trimmed)
         loading.value = true
         error.value = null
-        viewModelScope.launch {
+        val history = messages.value
+            .takeLast(8)
+            .map { HeartVoiceClient.Turn(it.role, it.text) }
+            .filter { it.role == "user" || it.role == "assistant" }
+        sendJob = viewModelScope.launch {
             // 阶段1：意图分类
             val intent = runCatching {
-                val content = heartVoiceClient.chat(cfg, CLASSIFY_PROMPT, listOf(HeartVoiceClient.Turn("user", trimmed)))
-                Gson().fromJson(cleanJson(content), IntentResult::class.java).intent
+                val content = heartVoiceClient.chat(cfg, CLASSIFY_PROMPT, history)
+                LlmJson.parse(content, IntentResult::class.java)?.intent
             }.getOrNull() ?: "chat"
 
             when (intent) {
                 "record" -> {
                     // 阶段2a：二分类记录（未来愿望 → 未发生之地；当下小事 → 随手记）
                     runCatching {
-                        val content = heartVoiceClient.chat(cfg, RECORD_PROMPT, listOf(HeartVoiceClient.Turn("user", trimmed)))
-                        val result = Gson().fromJson(cleanJson(content), RecordResult::class.java)
-                        val reply = result.reply ?: "嗯，我记下了。"
-                        if (result.target == "wish" && !result.title.isNullOrBlank()) {
-                            repository.seedWish(result.title.take(60), result.title.take(60))
-                            messages.value = messages.value + HeartVoiceMessage("assistant", "记到「未发生之地」了：${result.title}", null)
-                        } else if (!result.liteEvent.isNullOrBlank()) {
-                            var recorded: String? = null
-                            runCatching { repository.createLiteEvent(result.liteEvent.take(200)) }
-                                .onSuccess { recorded = result.liteEvent }
-                            messages.value = messages.value + HeartVoiceMessage("assistant", reply, recorded)
+                        val content = heartVoiceClient.chat(cfg, RECORD_PROMPT, history)
+                        val result = LlmJson.parse(content, RecordResult::class.java)
+                        if (result == null) {
+                            // 严格解析失败：不静默丢弃，降级展示原始回复
+                            val raw = degradedReply(content)
+                            messages.value = messages.value + HeartVoiceMessage("assistant", raw)
+                            persist("assistant", raw)
                         } else {
-                            messages.value = messages.value + HeartVoiceMessage("assistant", reply, null)
+                            val reply = result.reply ?: "嗯，我记下了。"
+                            if (result.target == "wish" && !result.title.isNullOrBlank()) {
+                                repository.seedWish(result.title.take(60), result.title.take(60))
+                                val msg = "记到「未发生之地」了：${result.title}"
+                                messages.value = messages.value + HeartVoiceMessage("assistant", msg, null)
+                                persist("assistant", msg)
+                            } else if (!result.liteEvent.isNullOrBlank()) {
+                                var recorded: String? = null
+                                runCatching { repository.createLiteEvent(result.liteEvent.take(200)) }
+                                    .onSuccess { recorded = result.liteEvent }
+                                messages.value = messages.value + HeartVoiceMessage("assistant", reply, recorded)
+                                persist("assistant", reply)
+                            } else {
+                                messages.value = messages.value + HeartVoiceMessage("assistant", reply, null)
+                                persist("assistant", reply)
+                            }
                         }
                     }.onFailure { e ->
+                        if (e is kotlinx.coroutines.CancellationException) throw e
                         messages.value = messages.value + HeartVoiceMessage("assistant", "这会儿没连上模型，等一下再试试。")
                         error.value = e.message
                     }
@@ -150,9 +183,11 @@ class HeartVoiceViewModel @Inject constructor(
                     // 阶段2b：检索个人记忆（轻事件 + 愿望标题）作为上下文回答
                     val contextBlock = buildMemoryContext()
                     runCatching {
-                        val reply = heartVoiceClient.chat(cfg, askPrompt(contextBlock), listOf(HeartVoiceClient.Turn("user", trimmed)))
+                        val reply = heartVoiceClient.chat(cfg, askPrompt(contextBlock), history)
                         messages.value = messages.value + HeartVoiceMessage("assistant", reply.trim())
+                        persist("assistant", reply.trim())
                     }.onFailure { e ->
+                        if (e is kotlinx.coroutines.CancellationException) throw e
                         messages.value = messages.value + HeartVoiceMessage("assistant", "这会儿没连上模型，等一下再试试。")
                         error.value = e.message
                     }
@@ -163,10 +198,12 @@ class HeartVoiceViewModel @Inject constructor(
                         val reply = heartVoiceClient.chat(
                             cfg,
                             "你是「风起簿」的温柔陪伴者。用户在闲聊或抒发情绪，温柔回应 1-2 句，不评判不催促。直接输出回应文本。",
-                            listOf(HeartVoiceClient.Turn("user", trimmed)),
+                            history,
                         )
                         messages.value = messages.value + HeartVoiceMessage("assistant", reply.trim())
+                        persist("assistant", reply.trim())
                     }.onFailure { e ->
+                        if (e is kotlinx.coroutines.CancellationException) throw e
                         messages.value = messages.value + HeartVoiceMessage("assistant", "这会儿没连上模型，等一下再试试。")
                         error.value = e.message
                     }
@@ -180,8 +217,13 @@ class HeartVoiceViewModel @Inject constructor(
         }
     }
 
-    private fun cleanJson(content: String): String =
-        content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+    /** 解析失败时的降级兜底：把原始回复剥壳后尽量以文本展示，不静默丢弃。 */
+    private fun degradedReply(raw: String): String = raw.trim().ifBlank { LlmJson.DEGRADED_REPLY }
+
+    /** 对话历史落盘（fire-and-forget：失败不打扰用户）。 */
+    private fun persist(role: String, text: String) {
+        viewModelScope.launch { runCatching { historyStore.append(role, text) } }
+    }
 
     /** 个人记忆上下文：画像条目 + open 轻事件（最近 20 条）+ 未完成愿望标题（最近 20 条）。 */
     private suspend fun buildMemoryContext(): String {
@@ -268,29 +310,41 @@ fun HeartVoiceScreen(viewModel: HeartVoiceViewModel = hiltViewModel()) {
                 }
             }
             if (loading) {
-                item { CircularProgressIndicator(Modifier.padding(8.dp)) }
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.padding(8.dp))
+                    }
+                }
             }
         }
-        Row(
-            Modifier.fillMaxWidth().padding(top = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it },
-                placeholder = { Text("说说你的想法……") },
-                modifier = Modifier.weight(1f),
-                maxLines = 3,
-            )
-            Button(
-                onClick = {
-                    viewModel.send(input)
-                    input = ""
-                },
-                enabled = input.isNotBlank() && !loading,
-                modifier = Modifier.padding(start = 8.dp),
-            ) { Text("说") }
-        }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    placeholder = { Text("说说你的想法……") },
+                    modifier = Modifier.weight(1f),
+                    maxLines = 3,
+                )
+                if (loading) {
+                    // 模型回答中：给用户可取消的停止入口（#10）
+                    Button(
+                        onClick = { viewModel.stop() },
+                        modifier = Modifier.padding(start = 8.dp),
+                    ) { Text("停") }
+                } else {
+                    Button(
+                        onClick = {
+                            viewModel.send(input)
+                            input = ""
+                        },
+                        enabled = input.isNotBlank(),
+                        modifier = Modifier.padding(start = 8.dp),
+                    ) { Text("说") }
+                }
+            }
         error?.let {
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
         }

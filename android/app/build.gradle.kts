@@ -5,6 +5,11 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// Room schema 导出：迁移 JSON 落到 app/schemas/，供 MigrationTestHelper 与人工比对（#14）
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "com.windveil.journal"
     compileSdk = 34
@@ -15,8 +20,6 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
-        // 后端 base_url：本地联调改为 http://10.0.2.2:8000/（模拟器访问宿主机）
-        buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8010/\"")
     }
 
     buildTypes {
@@ -62,11 +65,10 @@ dependencies {
     ksp("com.google.dagger:hilt-compiler:2.50")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
 
-    // 网络：Retrofit + OkHttp + Gson（对应后端 REST/JSON 契约）
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    // 网络：OkHttp（心语直连用户自配模型端点）+ Gson（JSON 序列化）
+    // 旧服务端契约（Retrofit 接口/模型/测试）已整体移到 test 源集，不进发布包
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation("com.google.code.gson:gson:2.10.1")
 
     // 本地存储：DataStore（access token）
     implementation("androidx.datastore:datastore-preferences:1.0.0")
@@ -81,11 +83,13 @@ dependencies {
 
     // 协程 Play services 不需要；日历走 ContentResolver
 
-    // 单元测试（include_tests: true）
+    // 单元测试（include_tests: true）；旧服务端契约也留在测试源集做契约回归
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     testImplementation("com.google.truth:truth:1.4.2")
+    testImplementation("com.squareup.retrofit2:retrofit:2.9.0")
+    testImplementation("com.squareup.retrofit2:converter-gson:2.9.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -19,7 +19,7 @@ class ExportService @Inject constructor(
     private val repository: StandaloneRepository,
 ) {
     suspend fun exportToDownloads(context: Context): String = withContext(Dispatchers.IO) {
-        val json = repository.exportJson()
+        val json = repository.exportJson { path -> File(path).takeIf { it.isFile }?.readBytes() }
         val docsDir = File(
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
             "windveil",
@@ -38,6 +38,16 @@ class ExportService @Inject constructor(
     suspend fun importFromUri(context: Context, uri: android.net.Uri): Triple<Int, Int, Int> = withContext(Dispatchers.IO) {
         val json = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
             ?: throw IllegalStateException("读不了这个文件")
-        repository.importJson(json, sanitizePhotos = { paths -> paths.filter { File(it).exists() } })
+        repository.importJson(
+            json,
+            writePhoto = { sourcePath, bytes ->
+                val suffix = sourcePath.substringAfterLast('.', "jpg")
+                val dir = File(context.filesDir, "lite_photos").apply { mkdirs() }
+                val target = File.createTempFile("photo_", ".$suffix", dir)
+                target.writeBytes(bytes)
+                target.absolutePath
+            },
+            sanitizePhotos = { paths -> paths.filter { File(it).isFile } },
+        )
     }
 }

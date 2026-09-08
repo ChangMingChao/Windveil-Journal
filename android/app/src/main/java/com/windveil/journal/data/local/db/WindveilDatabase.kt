@@ -9,8 +9,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [WishEntity::class, LiteEventEntity::class, MemoryEntity::class, PreferenceEntity::class],
-    version = 3,
-    exportSchema = false,
+    version = 4,
+    exportSchema = true,
 )
 abstract class WindveilDatabase : RoomDatabase() {
     abstract fun wishDao(): WishDao
@@ -44,13 +44,20 @@ abstract class WindveilDatabase : RoomDatabase() {
             }
         }
 
+        /** 3→4：日历事件 URI 独立保存，避免被准备时间线覆盖。 */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE wishes ADD COLUMN calendarEventUri TEXT")
+            }
+        }
+
         fun get(context: Context): WindveilDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     WindveilDatabase::class.java,
                     "windveil.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
             }
     }
 }

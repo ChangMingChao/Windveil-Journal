@@ -77,13 +77,12 @@ class SeedWishViewModel @Inject constructor(
     }
 
     fun saveAsLite(wishId: String, onClose: () -> Unit) {
-        // 轻事件转换（s02-lite-conversion 语义保留）：愿望删除 + 同文本轻事件
+        // 轻事件转换（s02-lite-conversion 语义保留）
         viewModelScope.launch {
             runCatching {
-                val wish = repository.observeWish(wishId)
-                repository.deleteWishPermanently(wishId)
-                // 文本从 wish 原话取（close 前已删，先取）
+                repository.convertWishToLiteEvent(wishId)
             }
+                .onFailure { error.value = it.message ?: "没记上，再试一次" }
             onClose()
         }
     }

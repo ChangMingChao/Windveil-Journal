@@ -26,7 +26,6 @@ import javax.inject.Singleton
 class CalendarReminder @Inject constructor(@ApplicationContext private val context: Context) {
 
     companion object {
-        private const val CAL_ID_UNKNOWN = -1L
         private const val EVENT_DESCRIPTION_PREFIX = "windveil:"
     }
 
