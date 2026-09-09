@@ -105,7 +105,9 @@ class HeartVoiceViewModel @Inject constructor(
         viewModelScope.launch {
             config.value = llmConfigStore.current()
             // 恢复上次对话（杀进程不丢；只恢复普通气泡，不恢复「已记下」标记）
-            messages.value = historyStore.load().map { HeartVoiceMessage(it.role, it.text) }
+            messages.value = historyStore.load()
+                .filter { it.role != null && it.text != null }
+                .map { HeartVoiceMessage(it.role, it.text) }
         }
     }
 
@@ -298,7 +300,7 @@ fun HeartVoiceScreen(viewModel: HeartVoiceViewModel = hiltViewModel()) {
                             else MaterialTheme.colorScheme.surfaceVariant,
                         )
                     ) {
-                        Text(msg.text, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium)
+                        Text(msg.text.orEmpty(), modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium)
                     }
                     if (msg.recorded != null) {
                         AssistChip(

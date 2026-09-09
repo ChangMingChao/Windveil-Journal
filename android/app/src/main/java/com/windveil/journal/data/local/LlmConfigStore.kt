@@ -37,7 +37,7 @@ class LlmConfigStore @Inject constructor(@ApplicationContext private val context
         if (baseUrl.isBlank()) null else LlmConfig(baseUrl, apiKey, model)
     }
 
-    suspend fun current(): LlmConfig? = config.first()
+    suspend fun current(): LlmConfig? = runCatching { config.first() }.getOrNull()
 
     suspend fun save(config: LlmConfig) {
         requireBaseUrl(config.baseUrl)

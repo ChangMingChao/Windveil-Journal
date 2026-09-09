@@ -33,10 +33,14 @@ class HeartVoiceHistoryStore @Inject constructor(@ApplicationContext private val
 
     suspend fun load(): List<HeartVoiceHistoryEntry> = runCatching {
         context.heartVoiceHistoryStore.data.first()[KEY]?.let { json ->
+            // Gson 反射会绕过 Kotlin 非空类型：损坏/半写的 JSON 可能产生 role/text 为 null 的条目，
+            // 直接透传会让 UI 渲染时 NPE（用户报"点开心语就闪退"）。这里过滤掉脏条目。
             gson.fromJson<List<HeartVoiceHistoryEntry>>(
                 json,
                 object : TypeToken<List<HeartVoiceHistoryEntry>>() {}.type,
-            )
+            )?.filter { it != null && it.role != null && it.text != null }
+                ?.map { HeartVoiceHistoryEntry(it.role!!, it.text!!) }
+                .orEmpty()
         }.orEmpty()
     }.getOrDefault(emptyList())
 
