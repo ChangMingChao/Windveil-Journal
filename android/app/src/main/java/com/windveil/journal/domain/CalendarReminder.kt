@@ -36,20 +36,29 @@ class CalendarReminder @Inject constructor(@ApplicationContext private val conte
 
     /** 取（或创建）用于本 App 的本地日历账户；失败返回 null。 */
     private fun calendarId(): Long? = try {
-        context.contentResolver.query(
+        // 兼容新旧两个日历名（改名前建的日历仍叫旧名）；IN 语义，缺失则新建
+        android.util.Log.d("WindveilCal", "calendarId(): querying IN (风起簿, 未发生事件管理局)")
+        val found = context.contentResolver.query(
             CalendarContract.Calendars.CONTENT_URI,
             arrayOf(CalendarContract.Calendars._ID),
-            "${CalendarContract.Calendars.CALENDAR_DISPLAY_NAME} = ?",
+            "${CalendarContract.Calendars.CALENDAR_DISPLAY_NAME} IN (?, ?)",
             arrayOf("风起簿", "未发生事件管理局"),
             null,
         )?.use { cursor ->
-            if (cursor.moveToFirst()) cursor.getLong(0) else null
+            if (cursor.moveToFirst()) {
+                val id = cursor.getLong(0)
+                android.util.Log.d("WindveilCal", "calendarId(): found=$id")
+                id
+            } else null
         } ?: createCalendar()
+        found
     } catch (e: Exception) {
+        android.util.Log.w("WindveilCal", "calendarId(): error", e)
         null
     }
 
     private fun createCalendar(): Long? = try {
+        android.util.Log.d("WindveilCal", "createCalendar(): creating 风起簿")
         // 找一个系统主日历账户挂靠
         val accountName = "windveil.local"
         val values = ContentValues().apply {
@@ -72,6 +81,7 @@ class CalendarReminder @Inject constructor(@ApplicationContext private val conte
         val result = context.contentResolver.insert(syncUri, values)
         result?.let { ContentUris.parseId(it) }
     } catch (e: Exception) {
+        android.util.Log.w("WindveilCal", "createCalendar(): failed", e)
         null
     }
 
@@ -106,8 +116,10 @@ class CalendarReminder @Inject constructor(@ApplicationContext private val conte
                 put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
             }
             context.contentResolver.insert(CalendarContract.Reminders.CONTENT_URI, reminderValues)
+            android.util.Log.d("WindveilCal", "schedule(): inserted uri=$uri")
             uri.toString()
         } catch (e: Exception) {
+            android.util.Log.w("WindveilCal", "schedule(): insert failed", e)
             null
         }
     }

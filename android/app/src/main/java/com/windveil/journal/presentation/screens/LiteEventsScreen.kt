@@ -277,11 +277,13 @@ internal fun LiteEventEditDialog(
                 }
             }
         },
+        // 保存按钮放大为整行宽（修复窄按钮易点空导致照片保存丢失）
         confirmButton = {
             Button(
                 onClick = { onSave(text, note, if (photos.isEmpty()) null else com.google.gson.Gson().toJson(photos)) },
                 enabled = text.isNotBlank() && text.length <= 200,
-            ) { Text("保存") }
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            ) { Text("保存（含 ${photos.size} 张照片）") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
