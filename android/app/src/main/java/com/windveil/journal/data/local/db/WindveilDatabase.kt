@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [WishEntity::class, LiteEventEntity::class, MemoryEntity::class, PreferenceEntity::class, ChatMessageEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class WindveilDatabase : RoomDatabase() {
@@ -67,13 +67,20 @@ abstract class WindveilDatabase : RoomDatabase() {
             }
         }
 
+        /** 5→6：wishes 增 photos（可空，无需数据搬迁；与 lite_events.photos 同格式）。 */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE wishes ADD COLUMN photos TEXT")
+            }
+        }
+
         fun get(context: Context): WindveilDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     WindveilDatabase::class.java,
                     "windveil.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { instance = it }
             }
     }
 }

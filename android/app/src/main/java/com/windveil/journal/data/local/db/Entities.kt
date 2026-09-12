@@ -31,6 +31,7 @@ data class WishEntity(
     val timeline: String? = null, // 准备过程时间线 JSON 数组
     val amendedFrom: String? = null, // 最初你说的是……
     val calendarEventUri: String? = null, // 系统日历事件 URI，与时间线分开保存
+    val photos: String? = null, // 照片本机路径 JSON 数组（DB v6，与 lite_events.photos 同格式）
 )
 
 /** 轻事件（S09）：纯记录、无提醒路径。 */

@@ -386,11 +386,38 @@ class StandaloneRepository @Inject constructor(
     /** 删除记忆页（已发生之书 CRUD）。 */
     suspend fun deleteMemory(id: String) = memoryDao.delete(id)
 
+    // ---------- 愿望照片（DB v6，与随手记同管道：本机路径 JSON，最多 9 张）----------
+
+    /** 整体替换愿望照片列表（新增时由 UI 先 copyToLocal 落盘再传入）。 */
+    suspend fun replaceWishPhotos(wishId: String, photos: List<String>) {
+        val wish = wishDao.get(wishId) ?: return
+        wishDao.update(
+            wish.copy(
+                photos = photos.takeIf { it.isNotEmpty() }?.let { gson.toJson(it) },
+                lastActivityAt = now(),
+            )
+        )
+    }
+
+    /** 移除单张愿望照片：更新列表并清理本机文件（与随手记 removePhoto 同语义）。 */
+    suspend fun removeWishPhoto(wishId: String, path: String) {
+        val wish = wishDao.get(wishId) ?: return
+        val remaining = decodePhotoPaths(wish.photos).filter { it != path }
+        wishDao.update(
+            wish.copy(
+                photos = remaining.takeIf { it.isNotEmpty() }?.let { gson.toJson(it) },
+                lastActivityAt = now(),
+            )
+        )
+        runCatching { java.io.File(path).delete() }
+    }
+
     // ---------- 彻底删除 ----------
 
     suspend fun deleteWishPermanently(wishId: String) {
         val wish = wishDao.get(wishId) ?: return
         calendarReminder.cancelAllForWish(wishId)
+        decodePhotoPaths(wish.photos).forEach { path -> runCatching { java.io.File(path).delete() } }
         chatDao.deleteByWish(wishId)
         wishDao.delete(wishId)
     }
@@ -439,9 +466,24 @@ class StandaloneRepository @Inject constructor(
 
     suspend fun exportJson(readPhoto: (String) -> ByteArray?): String {
         val payload = mapOf(
-            "schema_version" to 2,
+            "schema_version" to 3,
             "exported_at" to now(),
-            "wishes" to wishDao.all(),
+            "wishes" to wishDao.all().map { w ->
+                // 照片以 base64 内嵌（与 lite_events 同语义），覆盖实体序列化出的纯路径数组
+                val tree = gson.toJsonTree(w).asJsonObject
+                tree.add(
+                    "photos",
+                    gson.toJsonTree(
+                        decodePhotoPaths(w.photos).map { path ->
+                            mapOf(
+                                "path" to path,
+                                "data" to readPhoto(path)?.let { Base64.encodeToString(it, Base64.NO_WRAP) },
+                            )
+                        }
+                    ),
+                )
+                tree
+            },
             "lite_events" to liteDao.all().map { event ->
                 val photos = decodePhotoPaths(event.photos)
                 mapOf(
@@ -467,7 +509,7 @@ class StandaloneRepository @Inject constructor(
     /**
      * 导入备份（standalone-mode 补全）：按 ID 合并——同 ID 覆盖、新 ID 插入，不删现有数据。
      * 返回 (wishes, liteEvents, memories) 三类各自导入的条数。
-     * 备份格式 v2 会内嵌照片数据；v1 只保留本机仍存在的路径。
+     * 备份格式 v2 起照片内嵌（v3 起愿望也带照片）；v1 只保留本机仍存在的路径。
      */
     suspend fun importJson(
         json: String,
@@ -478,7 +520,7 @@ class StandaloneRepository @Inject constructor(
         return db.withTransaction {
             val payload: Map<String, Any> = gson.fromJson(json, type)
             val schemaVersion = (payload["schema_version"] as? Double)?.toInt()
-            if (schemaVersion != null && schemaVersion > 2) {
+            if (schemaVersion != null && schemaVersion > 3) {
                 throw IllegalArgumentException("备份格式太新，请先升级风起簿")
             }
 
@@ -515,6 +557,8 @@ class StandaloneRepository @Inject constructor(
                         timeline = str(m, "timeline"),
                         amendedFrom = str(m, "amendedFrom"),
                         calendarEventUri = null,
+                        photos = decodePhotosForImport(m["photos"], schemaVersion, writePhoto, sanitizePhotos)
+                            .takeIf { it.isNotEmpty() }?.let { gson.toJson(it) },
                     )
                 )
                 wishCount++
