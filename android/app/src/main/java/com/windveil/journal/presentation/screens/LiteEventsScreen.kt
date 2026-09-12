@@ -210,9 +210,9 @@ internal fun parsePhotos(json: String): List<String> = runCatching {
     ) as List<String>
 }.getOrDefault(emptyList())
 
-/** 照片宫格（3 列，点 × 删单张并回调清理）：随手记编辑弹窗与愿望详情共用。 */
+/** 照片宫格（3 列）：随手记编辑弹窗、愿望详情、记忆页共用；onRemove 为 null 时只读展示。 */
 @Composable
-internal fun PhotoGrid(photos: List<String>, onRemove: (String) -> Unit) {
+internal fun PhotoGrid(photos: List<String>, onRemove: ((String) -> Unit)?) {
     photos.chunked(3).forEach { rowPhotos ->
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             rowPhotos.forEach { path ->
@@ -223,15 +223,17 @@ internal fun PhotoGrid(photos: List<String>, onRemove: (String) -> Unit) {
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.size(72.dp),
                     )
-                    Icon(
-                        Icons.Filled.Close,
-                        contentDescription = "移除这张照片",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .size(18.dp)
-                            .clickable { onRemove(path) },
-                    )
+                    if (onRemove != null) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "移除这张照片",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .size(18.dp)
+                                .clickable { onRemove(path) },
+                        )
+                    }
                 }
             }
         }

@@ -48,7 +48,7 @@
 
 ## 备份与迁移
 
-- 导出：`我的 → 数据 → 导出 JSON`，经系统保存器（SAF）选择保存位置，默认文件名 `windveil-backup-<时间戳>.json`；包含愿望、随手记（**两者照片均以 base64 内嵌**）、已发生之书，带 `schema_version` 字段（当前 3）。
+- 导出：`我的 → 数据 → 导出 JSON`，经系统保存器（SAF）选择保存位置，默认文件名 `windveil-backup-<时间戳>.json`；包含愿望、随手记、记忆页（**照片均以 base64 内嵌**），带 `schema_version` 字段（当前 4）。
 - 导入：按 ID 合并（同 ID 覆盖、新 ID 插入），整体在 Room 事务中执行并预校验 schema 版本；照片解 base64 后落本机新文件。v1 旧备份（无内嵌照片）只保留本机仍存在的路径。
 - API Key 永不进入备份（备份只含业务数据；模型配置在 DataStore 中，且 `allowBackup=false`）。
 - 愿望对话历史（`chat_messages` 表，DB v5）暂不进入备份：删愿望时随之清理，卸载重装不恢复。
@@ -69,7 +69,6 @@
 - 2027 节假日数据为推算版（`assets/holidays_2027.json` 的 `source` 已标注）：官方安排公布后替换该文件即可，`HolidayDataSource` 会自动扫描纳入；
 - 语音种下（source=voice）：录音 UI 与上传管道未接入，可先用文字输入；
 - 推送通知：提醒只走系统日历，FCM 未接入；
-- 记忆页照片未接入（愿望、随手记已有照片流，DB v6）；
 - Room 迁移自动化测试（MigrationTestHelper）具备条件（schema 已导出），尚未补测试用例；
 - 依赖偏旧（AGP 8.5 / Kotlin 1.9.22 / Compose BOM 2024.02 / targetSdk 34）：升级 targetSdk 35+ 是上架 Google Play 的前置项，建议单独分支完整回归日历与照片选择器。
 
@@ -92,5 +91,5 @@ app/src/main/java/com/windveil/journal/
     └── screens/                   # 各页面 + 对应 ViewModel
 
 app/src/test/                      # 单元测试（含服务端契约回归：Models/ApiServices/WishesApiTest）
-app/schemas/                       # Room schema JSON（v6）
+app/schemas/                       # Room schema JSON（v7）
 ```
