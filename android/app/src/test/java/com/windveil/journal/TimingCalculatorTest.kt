@@ -204,6 +204,77 @@ class TimingCalculatorTest {
         assertEquals(10, at.monthValue); assertEquals(17, at.dayOfMonth)
     }
 
+    // ---- 今天边界（v0.3.0：nextTriggerAt 不得落在过去）----
+
+    @Test
+    fun season_起始日当天_上午9点前_取今年() {
+        // 3 月 1 日当天早上 8 点选春天 → 今年 3 月 1 日 9 点（还来得及提醒）
+        val now = ZonedDateTime.of(2026, 3, 1, 8, 0, 0, 0, zone)
+        val plan = TimingCalculator.plan(
+            "season", today = LocalDate.of(2026, 3, 1), zone = zone, now = now, season = "spring",
+        )
+        val at = plan.nextTriggerAt!!.atZone(zone)
+        assertEquals(2026, at.year); assertEquals(3, at.monthValue); assertEquals(1, at.dayOfMonth)
+        assertEquals("season:spring:2026", plan.occurrence)
+    }
+
+    @Test
+    fun season_起始日当天_上午9点已过_取明年() {
+        // 3 月 1 日下午 3 点选春天 → 当天 9 点已过，顺延明年 3 月 1 日
+        val now = ZonedDateTime.of(2026, 3, 1, 15, 0, 0, 0, zone)
+        val plan = TimingCalculator.plan(
+            "season", today = LocalDate.of(2026, 3, 1), zone = zone, now = now, season = "spring",
+        )
+        val at = plan.nextTriggerAt!!.atZone(zone)
+        assertEquals(2027, at.year); assertEquals(3, at.monthValue)
+        assertEquals("season:spring:2027", plan.occurrence)
+    }
+
+    @Test
+    fun month_day_今天_9点前_可取今天() {
+        val now = ZonedDateTime.of(2026, 9, 6, 8, 0, 0, 0, zone)
+        val plan = TimingCalculator.plan(
+            "month_day", today = LocalDate.of(2026, 9, 6), zone = zone, now = now, monthDay = "2026-09-06",
+        )
+        val at = plan.nextTriggerAt!!.atZone(zone)
+        assertEquals(2026, at.year); assertEquals(9, at.monthValue); assertEquals(6, at.dayOfMonth)
+        assertEquals(9, at.hour)
+    }
+
+    @Test
+    fun month_day_今天_9点已过_报TimingInvalid() {
+        val now = ZonedDateTime.of(2026, 9, 6, 15, 0, 0, 0, zone)
+        try {
+            TimingCalculator.plan(
+                "month_day", today = LocalDate.of(2026, 9, 6), zone = zone, now = now, monthDay = "2026-09-06",
+            )
+            throw AssertionError("should throw")
+        } catch (e: TimingCalculator.TimingInvalid) { /* 期望 */ }
+    }
+
+    @Test
+    fun holiday_今天_9点前_取今天() {
+        val data = holidayData("2026-10-01" to "国庆节", "2027-10-01" to "国庆节")
+        val now = ZonedDateTime.of(2026, 10, 1, 8, 0, 0, 0, zone)
+        val plan = TimingCalculator.plan(
+            "holiday", today = LocalDate.of(2026, 10, 1), zone = zone, now = now,
+            holidays = listOf("国庆节"), holidayData = data,
+        )
+        assertTrue(plan.occurrence!!.contains("2026-10-01"))
+    }
+
+    @Test
+    fun holiday_今天_9点已过_顺延到次年同日() {
+        // 10 月 1 日当天下午选国庆节 → 当天 9 点已过 → 取 2027-10-01
+        val data = holidayData("2026-10-01" to "国庆节", "2027-10-01" to "国庆节")
+        val now = ZonedDateTime.of(2026, 10, 1, 15, 0, 0, 0, zone)
+        val plan = TimingCalculator.plan(
+            "holiday", today = LocalDate.of(2026, 10, 1), zone = zone, now = now,
+            holidays = listOf("国庆节"), holidayData = data,
+        )
+        assertTrue(plan.occurrence!!.contains("2027-10-01"))
+    }
+
     // ---- 卡面文案 ----
 
     @Test

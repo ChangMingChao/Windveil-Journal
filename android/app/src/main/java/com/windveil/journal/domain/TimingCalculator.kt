@@ -64,6 +64,7 @@ object TimingCalculator {
         timingType: String,
         today: LocalDate = LocalDate.now(),
         zone: ZoneId = ZoneId.systemDefault(),
+        now: ZonedDateTime = ZonedDateTime.now(zone),
         season: String? = null,
         monthDay: String? = null,
         afterMonths: Int? = null,
@@ -79,7 +80,13 @@ object TimingCalculator {
                 val s = season ?: throw TimingInvalid("season is required")
                 val month = SEASON_START_MONTH[s]
                     ?: throw TimingInvalid("season must be one of spring/summer/autumn/winter")
-                val year = if (YearMonth.of(today.year, month).atDay(1) > today) today.year else today.year + 1
+                val startDate = LocalDate.of(today.year, month, 1)
+                // 起始日 == 今天时：上午 9 点还没到仍算今年，已过则取明年（否则 nextTriggerAt 落在过去）
+                val year = if (startDate > today || (startDate == today && now.isBefore(localAt(zone, startDate)))) {
+                    today.year
+                } else {
+                    today.year + 1
+                }
                 val whenAt = localAt(zone, LocalDate.of(year, month, 1))
                 Plan("season", s, "time", whenAt.toInstant(), "season:$s:$year")
             }
@@ -97,6 +104,9 @@ object TimingCalculator {
                     throw TimingInvalid("month_day is not a real date")
                 }
                 if (target < today) throw TimingInvalid("month_day is in the past")
+                if (target == today && !now.isBefore(localAt(zone, target))) {
+                    throw TimingInvalid("今天上午 9 点已经过了，换一个时间吧")
+                }
                 val whenAt = localAt(zone, target)
                 Plan("month_day", md, "time", whenAt.toInstant(), "month_day:$md")
             }
@@ -137,7 +147,8 @@ object TimingCalculator {
                 for (year in listOf(today.year, today.year + 1)) {
                     val hits = data.holidaysOf(year)
                         .map { (dayStr, name) -> Pair(LocalDate.parse(dayStr), name) }
-                        .filter { it.second in wanted && it.first >= today }
+                        // 已过 9 点的今天不算命中（nextTriggerAt 不能落在过去），自然顺延到下一个匹配日
+                        .filter { it.second in wanted && it.first >= today && localAt(zone, it.first).isAfter(now) }
                     if (hits.isNotEmpty()) {
                         found = hits.minByOrNull { it.first }!!
                         break
