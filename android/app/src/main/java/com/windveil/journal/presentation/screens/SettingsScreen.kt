@@ -81,9 +81,8 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { repository.deletePreference(id) }
     }
 
-    fun requestCalendar(context: android.content.Context) {
-        // 运行时权限请求在 Composable 侧做（rememberLauncherForActivityResult），
-        // 这里刷新授权状态即可（用户从系统设置回来时触发 refresh）
+    /** 刷新日历授权状态（权限请求回调 / 从系统设置返回时触发 refresh 亦可）。 */
+    fun refreshCalendarGranted() {
         calendarGranted.value = calendarReminder.hasPermission()
     }
 
@@ -178,7 +177,7 @@ fun SettingsScreen(
             ProfileSection(viewModel)
         }
         SettingsSection.REMIND -> SectionScaffold("提醒（系统日历）", onBackToRoot = { section = SettingsSection.ROOT }) {
-            RemindSection(viewModel, context)
+            RemindSection(viewModel)
         }
         SettingsSection.DATA -> SectionScaffold("数据", onBackToRoot = { section = SettingsSection.ROOT }) {
             DataSection(viewModel, context)
@@ -318,8 +317,14 @@ private fun ProfileSection(viewModel: SettingsViewModel) {
 
 /** 提醒：系统日历授权引导。 */
 @Composable
-private fun RemindSection(viewModel: SettingsViewModel, context: android.content.Context) {
+private fun RemindSection(viewModel: SettingsViewModel) {
     val granted by viewModel.calendarGranted.collectAsState()
+    val permissionLauncher = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        // 授权结果（允许/拒绝）都刷新状态；被永久拒绝时按钮仍在，点击会引导到系统设置
+        viewModel.refreshCalendarGranted()
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("系统日历提醒", style = MaterialTheme.typography.titleSmall)
@@ -328,10 +333,17 @@ private fun RemindSection(viewModel: SettingsViewModel, context: android.content
                 else "尚未授权日历权限。授权后，约定时机的事件会写入系统日历，到点由系统提醒；不授权也能用，只是提醒只在打开应用时看到。",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Button(onClick = {
-                // 跳转系统设置授予日历权限（简化：直接请求运行时权限）
-                viewModel.requestCalendar(context)
-            }) { Text(if (granted) "已授权" else "授权日历权限") }
+            Button(
+                onClick = {
+                    permissionLauncher.launch(
+                        arrayOf(
+                            android.Manifest.permission.READ_CALENDAR,
+                            android.Manifest.permission.WRITE_CALENDAR,
+                        )
+                    )
+                },
+                enabled = !granted,
+            ) { Text(if (granted) "已授权" else "授权日历权限") }
             Text(
                 "邮件通道已按需求移除：提醒只走系统日历。",
                 style = MaterialTheme.typography.labelSmall,
