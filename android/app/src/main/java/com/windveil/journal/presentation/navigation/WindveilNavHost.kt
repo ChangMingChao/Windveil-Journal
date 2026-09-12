@@ -128,8 +128,16 @@ fun WindveilApp(startDestination: String, navController: NavHostController = rem
                     memoryId = it.arguments?.getString("memoryId").orEmpty(),
                     onBack = { nav.popBackStack() },
                     onPublished = {
-                        // 收进书里后直接跳到已发生之书（弹回两层：memory -> wish/garden）
-                        nav.popBackStack(Routes.MEMORIES, false)
+                        // 收进书里后跳到已发生之书：返回栈里有 memories 就弹回去；
+                        // 从愿望详情进入（garden→wish→memory）时栈里没有 memories，
+                        // popBackStack 返回 false，改按 Tab 语义导航过去
+                        if (!nav.popBackStack(Routes.MEMORIES, false)) {
+                            nav.navigate(Routes.MEMORIES) {
+                                popUpTo(Routes.GARDEN) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
                     },
                 )
             }
