@@ -1,34 +1,29 @@
 package com.windveil.journal.domain
 
 import android.content.Context
-import android.os.Environment
 import com.windveil.journal.data.repository.StandaloneRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** 数据导出（standalone-mode）：全量 JSON 写到公共 Documents/windveil/。 */
+/** 数据导出（standalone-mode）：全量 JSON 写入用户经系统保存器选定的位置（SAF）。 */
 @Singleton
 class ExportService @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: StandaloneRepository,
 ) {
-    suspend fun exportToDownloads(context: Context): String = withContext(Dispatchers.IO) {
+    /**
+     * 导出到用户选定的目标 URI（SAF ACTION_CREATE_DOCUMENT）。
+     * 不再直写公共目录（scoped storage 下 File API 不可靠）；失败抛异常，由调用方提示。
+     */
+    suspend fun exportToUri(uri: android.net.Uri) = withContext(Dispatchers.IO) {
         val json = repository.exportJson { path -> File(path).takeIf { it.isFile }?.readBytes() }
-        val docsDir = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
-            "windveil",
-        )
-        if (!docsDir.exists()) docsDir.mkdirs()
-        val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
-        val out = File(docsDir, "windveil-backup-$stamp.json")
-        out.writeText(json, Charsets.UTF_8)
-        out.absolutePath
+        val out = context.contentResolver.openOutputStream(uri, "wt")
+            ?: throw IllegalStateException("写不了这个位置")
+        out.bufferedWriter(Charsets.UTF_8).use { it.write(json) }
     }
 
     /**

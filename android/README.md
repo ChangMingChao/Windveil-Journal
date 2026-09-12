@@ -48,7 +48,7 @@
 
 ## 备份与迁移
 
-- 导出：`我的 → 数据 → 导出 JSON`，写到 `Documents/windveil/windveil-backup-<时间戳>.json`；包含愿望、随手记（**照片以 base64 内嵌**）、已发生之书，带 `schema_version` 字段（当前 2）。
+- 导出：`我的 → 数据 → 导出 JSON`，经系统保存器（SAF）选择保存位置，默认文件名 `windveil-backup-<时间戳>.json`；包含愿望、随手记（**照片以 base64 内嵌**）、已发生之书，带 `schema_version` 字段（当前 2）。
 - 导入：按 ID 合并（同 ID 覆盖、新 ID 插入），整体在 Room 事务中执行并预校验 schema 版本；照片解 base64 后落本机新文件。v1 旧备份（无内嵌照片）只保留本机仍存在的路径。
 - API Key 永不进入备份（备份只含业务数据；模型配置在 DataStore 中，且 `allowBackup=false`）。
 - 愿望对话历史（`chat_messages` 表，DB v5）暂不进入备份：删愿望时随之清理，卸载重装不恢复。

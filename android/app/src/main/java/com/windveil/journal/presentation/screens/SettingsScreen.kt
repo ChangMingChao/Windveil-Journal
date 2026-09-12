@@ -87,16 +87,29 @@ class SettingsViewModel @Inject constructor(
         calendarGranted.value = calendarReminder.hasPermission()
     }
 
-    fun export(context: android.content.Context) {
+    fun export(context: android.content.Context, uri: android.net.Uri) {
         if (busy.value) return
         viewModelScope.launch {
             busy.value = true
-            runCatching { exportService.exportToDownloads(context) }
-                .onSuccess { exportPath.value = it }
-                .onFailure { error.value = it.message }
+            runCatching {
+                exportService.exportToUri(uri)
+                displayNameOf(context, uri)
+            }
+                .onSuccess { exportPath.value = "已导出：$it" }
+                .onFailure { error.value = it.message ?: "导出失败" }
             busy.value = false
         }
     }
+
+    /** 用户选择的保存位置的文件名（OpenableColumns），查不到就返回兜底文案。 */
+    private fun displayNameOf(context: android.content.Context, uri: android.net.Uri): String =
+        runCatching {
+            context.contentResolver.query(
+                uri,
+                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                null, null, null,
+            )?.use { if (it.moveToFirst()) it.getString(0) else null }
+        }.getOrNull() ?: "备份文件"
 
     fun import(context: android.content.Context, uri: android.net.Uri) {
         if (busy.value) return
@@ -340,16 +353,28 @@ private fun DataSection(viewModel: SettingsViewModel, context: android.content.C
     ) { uri ->
         uri?.let { viewModel.import(context, it) }
     }
+    val exportLauncher = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri?.let { viewModel.export(context, it) }
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("导出备份", style = MaterialTheme.typography.titleSmall)
             Text(
-                "把全部愿望、随手记（含照片）、已发生之书导出为一个 JSON 文件（存到 Documents/windveil/）。",
+                "把全部愿望、随手记（含照片）、已发生之书导出为一个 JSON 文件。保存位置由你选择。",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Button(onClick = { viewModel.export(context) }, enabled = !busy) { Text(if (busy) "正在导出…" else "导出 JSON") }
+            Button(
+                onClick = {
+                    val stamp = java.time.LocalDateTime.now()
+                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
+                    exportLauncher.launch("windveil-backup-$stamp.json")
+                },
+                enabled = !busy,
+            ) { Text(if (busy) "正在导出…" else "导出 JSON") }
             exportPath?.let {
-                Text("已导出：$it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             }
         }
     }
