@@ -12,8 +12,18 @@ class HolidayDataSource @Inject constructor(@ApplicationContext private val cont
 
     private val cache = mutableMapOf<Int, String>()
 
-    // assets 打包的年份；后续年度更新数据文件时同步扩这里
-    private val availableYears = listOf(2026)
+    private companion object {
+        val YEAR_FILE_RE = Regex("^holidays_(\\d{4})\\.json$")
+    }
+
+    // assets 打包的年份：扫描 holidays_<year>.json 动态装配，新增年度数据文件即自动生效
+    private val availableYears: List<Int> by lazy {
+        runCatching {
+            context.assets.list("").orEmpty()
+                .mapNotNull { name -> YEAR_FILE_RE.find(name)?.groupValues?.get(1)?.toIntOrNull() }
+                .sorted()
+        }.getOrDefault(emptyList())
+    }
 
     private fun load(year: Int): String? = synchronized(cache) {
         if (cache.containsKey(year)) {
