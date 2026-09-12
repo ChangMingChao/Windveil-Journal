@@ -23,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -210,17 +211,21 @@ internal fun parsePhotos(json: String): List<String> = runCatching {
     ) as List<String>
 }.getOrDefault(emptyList())
 
+/**
+ * 编辑这一条（朋友圈式，用户 2026-09-11 反馈「详情太复杂」）：
+ * 只留两样东西——一段文字 + 照片宫格（3 列，点 × 删单张，末尾继续加，最多 9 张）。
+ * 不再提供单独的「备注」输入框；历史备注原样保留并在列表里显示。
+ */
 @Composable
 internal fun LiteEventEditDialog(
     initialText: String,
-    initialNote: String,
+    initialNote: String?,
     initialPhotos: String?,
     onSave: (String, String?, String?) -> Unit,
     onDismiss: () -> Unit,
     onRemovePhoto: (String) -> Unit = {},
 ) {
     var text by remember { mutableStateOf(initialText) }
-    var note by remember { mutableStateOf(initialNote) }
     var photos by remember { mutableStateOf(parsePhotos(initialPhotos.orEmpty())) }
     val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(9)) { uris ->
@@ -235,55 +240,54 @@ internal fun LiteEventEditDialog(
         title = { Text("编辑这一条") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text("内容") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    label = { Text("相关信息（观后感、备注……）") },
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text("这一刻的想法……") },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 2,
                 )
-                if (photos.isNotEmpty()) {
-                    // 缩略图 + 单张删除：点 × 只从这一条里移除并删本机文件
+                // 照片宫格：3 列排布，点 × 只从这一条里移除并删本机文件
+                photos.chunked(3).forEach { rowPhotos ->
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        photos.forEach { path ->
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(Modifier.size(56.dp)) {
-                                    AsyncImage(
-                                        model = File(path),
-                                        contentDescription = "已选照片",
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.size(56.dp),
-                                    )
-                                    Icon(
-                                        Icons.Filled.Close,
-                                        contentDescription = "移除这张照片",
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .size(18.dp)
-                                            .clickable {
-                                                onRemovePhoto(path)
-                                                photos = photos - path
-                                            },
-                                    )
-                                }
+                        rowPhotos.forEach { path ->
+                            Box(Modifier.size(72.dp)) {
+                                AsyncImage(
+                                    model = File(path),
+                                    contentDescription = "已选照片",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(72.dp),
+                                )
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "移除这张照片",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .size(18.dp)
+                                        .clickable {
+                                            onRemovePhoto(path)
+                                            photos = photos - path
+                                        },
+                                )
                             }
                         }
                     }
                 }
-                Button(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
-                    Text(if (photos.isEmpty()) "添加照片（最多 9 张）" else "再加照片（已选 ${photos.size}/9）")
+                if (photos.size < 9) {
+                    OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                        Text(if (photos.isEmpty()) "添加照片" else "再加照片（${photos.size}/9）")
+                    }
                 }
             }
         },
         // 保存按钮放大为整行宽（修复窄按钮易点空导致照片保存丢失）
         confirmButton = {
             Button(
-                onClick = { onSave(text, note, if (photos.isEmpty()) null else com.google.gson.Gson().toJson(photos)) },
+                onClick = { onSave(text, initialNote, if (photos.isEmpty()) null else com.google.gson.Gson().toJson(photos)) },
                 enabled = text.isNotBlank() && text.length <= 200,
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            ) { Text("保存（含 ${photos.size} 张照片）") }
+            ) { Text("保存") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )

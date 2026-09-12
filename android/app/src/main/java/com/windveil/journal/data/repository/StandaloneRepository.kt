@@ -6,6 +6,7 @@ import com.windveil.journal.data.local.db.LiteEventEntity
 import com.windveil.journal.data.local.db.MemoryEntity
 import com.windveil.journal.data.local.db.WindveilDatabase
 import com.windveil.journal.data.local.db.WishEntity
+import com.windveil.journal.data.remote.HeartVoiceClient
 import com.windveil.journal.domain.AnalysisService
 import com.windveil.journal.domain.CalendarReminder
 import com.windveil.journal.domain.HolidayDataSource
@@ -37,6 +38,7 @@ class StandaloneRepository @Inject constructor(
     private val wishDao = db.wishDao()
     private val liteDao = db.liteEventDao()
     private val memoryDao = db.memoryDao()
+    private val chatDao = db.chatMessageDao()
     private val gson = com.google.gson.Gson()
 
     private fun now(): String = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
@@ -53,6 +55,7 @@ class StandaloneRepository @Inject constructor(
     fun observePublishedMemories(): Flow<List<MemoryEntity>> = memoryDao.observePublished()
     fun observeMemory(id: String): Flow<MemoryEntity?> = memoryDao.observe(id)
     fun observeLivedPages(): Flow<Int> = memoryDao.observeLivedPages()
+    fun observeChat(wishId: String): Flow<List<com.windveil.journal.data.local.db.ChatMessageEntity>> = chatDao.observeByWish(wishId)
 
     // ---------- 种愿望（S02）----------
 
@@ -289,10 +292,30 @@ class StandaloneRepository @Inject constructor(
         )
     }
 
-    /** 与 Agent 对话（单机简化：走心语通道，返回回应文本；降级 null）。 */
+    /**
+     * 与 Agent 对话（单机简化：走心语通道，返回回应文本；降级 null）。
+     * 用户消息与模型回应都落盘 chat_messages（杀进程不丢）；回应为 null（降级）时只留用户消息。
+     */
     suspend fun chat(wishId: String, text: String): String? {
         val wish = wishDao.get(wishId) ?: return null
-        return analysisService.chat(llmConfig(), wish.title, text)
+        chatDao.insert(
+            com.windveil.journal.data.local.db.ChatMessageEntity(
+                id = newId(), wishId = wishId, role = "user", text = text, createdAt = now(),
+            )
+        )
+        val history = chatDao.recentByWish(wishId, 9) // 含刚插入的这条 user 消息
+            .dropLast(1)
+            .takeLast(8)
+            .map { HeartVoiceClient.Turn(it.role, it.text) }
+        val reply = analysisService.chat(llmConfig(), wish.title, text, history)
+        if (reply != null) {
+            chatDao.insert(
+                com.windveil.journal.data.local.db.ChatMessageEntity(
+                    id = newId(), wishId = wishId, role = "assistant", text = reply, createdAt = now(),
+                )
+            )
+        }
+        return reply
     }
 
     // ---------- S06 已发生 ----------
@@ -368,6 +391,7 @@ class StandaloneRepository @Inject constructor(
     suspend fun deleteWishPermanently(wishId: String) {
         val wish = wishDao.get(wishId) ?: return
         calendarReminder.cancelAllForWish(wishId)
+        chatDao.deleteByWish(wishId)
         wishDao.delete(wishId)
     }
 

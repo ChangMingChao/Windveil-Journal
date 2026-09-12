@@ -31,12 +31,12 @@
 | 进门即未发生之地 | `MainActivity` | startDestination = "garden"，无账号分流 |
 | S02 随手种下一个愿望 | `SeedWishScreen` | 原话输入 + 心语一句追问；降级自动跳过轻问；「先记一下」原子转换为随手记（同文本轻事件） |
 | S03 约定属于它的时机 | `WishDetailScreen` | 六种时机选项（端上计算）+「让它提个时候」；写日历前先取消旧事件，同 occurrence 去重防重复提醒 |
-| S04 风来了，开始第一小步 | `WishDetailScreen` | 最小步骤（换一个更小的 / 做完了）+ 与 Agent 对话 |
+| S04 风来了，开始第一小步 | `WishDetailScreen` | 最小步骤（换一个更小的 / 做完了）+ 与 Agent 对话（历史气泡随愿望持久化，杀进程不丢） |
 | S05 回看与整理 | `GardenScreen` + `WishDetailScreen` | 河流式列表、还不是现在 / 暂时不提醒 / 先放回酝酿 / 安静放下 / 彻底删除（二次确认） |
 | S06 已发生之书 | `MemoryBookScreen` + `MemoryPageScreen` | 草稿→编辑→收进书里；全部区块可为空仍可发布 |
 | S07 唤回被放下的愿望 | `WishDetailScreen` | let_go 状态提供「重新种下」 |
 | S08 它记得我什么 | `SettingsScreen` | 用户画像（你说过的/我猜的，可删除） |
-| S09 随手记 | `LiteEventsScreen` | 记下 / 划掉 / 收走，无提醒路径；支持备注与照片（缩略图、编辑弹窗内可删单张） |
+| S09 随手记 | `LiteEventsScreen` | 记下 / 划掉 / 收走，无提醒路径；编辑弹窗为朋友圈式（一段文字 + 3 列照片宫格，点 × 删单张，最多 9 张）；历史备注保留并在列表显示 |
 | 心语对话 | `HeartVoiceScreen` | 意图分类（ask/record/chat）→ 记录或建议；对话历史持久化（杀进程不丢，取最近 8 轮作上下文）；回答可随时「停」 |
 
 ## 提醒通道：系统日历
@@ -51,6 +51,7 @@
 - 导出：`我的 → 数据 → 导出 JSON`，写到 `Documents/windveil/windveil-backup-<时间戳>.json`；包含愿望、随手记（**照片以 base64 内嵌**）、已发生之书，带 `schema_version` 字段（当前 2）。
 - 导入：按 ID 合并（同 ID 覆盖、新 ID 插入），整体在 Room 事务中执行并预校验 schema 版本；照片解 base64 后落本机新文件。v1 旧备份（无内嵌照片）只保留本机仍存在的路径。
 - API Key 永不进入备份（备份只含业务数据；模型配置在 DataStore 中，且 `allowBackup=false`）。
+- 愿望对话历史（`chat_messages` 表，DB v5）暂不进入备份：删愿望时随之清理，卸载重装不恢复。
 
 ## 构建与运行
 
@@ -86,5 +87,5 @@ app/src/main/java/com/windveil/journal/
     └── screens/                   # 各页面 + 对应 ViewModel
 
 app/src/test/                      # 单元测试（含服务端契约回归：Models/ApiServices/WishesApiTest）
-app/schemas/                       # Room schema JSON（v4）
+app/schemas/                       # Room schema JSON（v5）
 ```

@@ -8,8 +8,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [WishEntity::class, LiteEventEntity::class, MemoryEntity::class, PreferenceEntity::class],
-    version = 4,
+    entities = [WishEntity::class, LiteEventEntity::class, MemoryEntity::class, PreferenceEntity::class, ChatMessageEntity::class],
+    version = 5,
     exportSchema = true,
 )
 abstract class WindveilDatabase : RoomDatabase() {
@@ -17,6 +17,7 @@ abstract class WindveilDatabase : RoomDatabase() {
     abstract fun liteEventDao(): LiteEventDao
     abstract fun memoryDao(): MemoryDao
     abstract fun preferenceDao(): PreferenceDao
+    abstract fun chatMessageDao(): ChatMessageDao
 
     companion object {
         @Volatile
@@ -51,13 +52,28 @@ abstract class WindveilDatabase : RoomDatabase() {
             }
         }
 
+        /** 4→5：新建 chat_messages 表（愿望对话历史，S04「和它聊聊」）。 */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS chat_messages (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "wishId TEXT NOT NULL, " +
+                        "role TEXT NOT NULL, " +
+                        "text TEXT NOT NULL, " +
+                        "createdAt TEXT NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_chat_messages_wishId ON chat_messages(wishId)")
+            }
+        }
+
         fun get(context: Context): WindveilDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     WindveilDatabase::class.java,
                     "windveil.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
             }
     }
 }

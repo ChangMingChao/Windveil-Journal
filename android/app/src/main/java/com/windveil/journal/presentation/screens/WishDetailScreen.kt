@@ -48,6 +48,7 @@ class WishDetailViewModel @Inject constructor(
     private val repository: StandaloneRepository,
 ) : ViewModel() {
     val wish = MutableStateFlow<WishEntity?>(null)
+    val chatMessages = MutableStateFlow<List<com.windveil.journal.data.local.db.ChatMessageEntity>>(emptyList())
     val holidayNames = MutableStateFlow<List<String>>(emptyList())
     val holidaysAvailable = MutableStateFlow(true)
     val loading = MutableStateFlow(false)
@@ -69,6 +70,10 @@ class WishDetailViewModel @Inject constructor(
     fun load(wishId: String) {
         viewModelScope.launch {
             repository.observeWish(wishId).collect { wish.value = it }
+        }
+        // 对话历史与 Room 同步（发送/回应落盘后自动刷新）
+        viewModelScope.launch {
+            repository.observeChat(wishId).collect { chatMessages.value = it }
         }
     }
 
@@ -405,9 +410,37 @@ private fun StepSection(wishId: String, viewModel: WishDetailViewModel, current:
 
 @Composable
 private fun MessagesSection(wishId: String, viewModel: WishDetailViewModel) {
+    val messages by viewModel.chatMessages.collectAsState()
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text("和它聊聊", style = MaterialTheme.typography.titleSmall)
+            if (messages.isNotEmpty()) {
+                // 历史气泡：用户靠右，它靠左；Room 流驱动，落盘即显示
+                Column(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    messages.forEach { msg ->
+                        Column(
+                            Modifier.fillMaxWidth(),
+                            horizontalAlignment = if (msg.role == "user") androidx.compose.ui.Alignment.End else androidx.compose.ui.Alignment.Start,
+                        ) {
+                            Card(
+                                colors = androidx.compose.material3.CardDefaults.cardColors(
+                                    containerColor = if (msg.role == "user") MaterialTheme.colorScheme.primaryContainer
+                                    else MaterialTheme.colorScheme.surfaceVariant,
+                                )
+                            ) {
+                                Text(
+                                    msg.text,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             var text by remember { mutableStateOf("") }
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 OutlinedTextField(

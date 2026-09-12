@@ -87,6 +87,22 @@ interface MemoryDao {
 
 
 @Dao
+interface ChatMessageDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(message: ChatMessageEntity)
+
+    @Query("SELECT * FROM chat_messages WHERE wishId = :wishId ORDER BY createdAt ASC")
+    fun observeByWish(wishId: String): Flow<List<ChatMessageEntity>>
+
+    @Query("SELECT * FROM chat_messages WHERE wishId = :wishId ORDER BY createdAt DESC LIMIT :limit")
+    suspend fun recentByWish(wishId: String, limit: Int): List<ChatMessageEntity>
+
+    @Query("DELETE FROM chat_messages WHERE wishId = :wishId")
+    suspend fun deleteByWish(wishId: String)
+}
+
+
+@Dao
 interface PreferenceDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(pref: com.windveil.journal.data.local.db.PreferenceEntity)

@@ -133,10 +133,17 @@ class AnalysisService @Inject constructor(
     data class PreferenceDraft(val prefKey: String, val value: String, val source: String)
 
     /** 愿望详情页的自由对话（chat/推进/疲惫信号由调用方按语义处理）。返回 null = 降级。 */
-    suspend fun chat(config: LlmConfig?, wishTitle: String, userText: String): String? {
+    suspend fun chat(
+        config: LlmConfig?,
+        wishTitle: String,
+        userText: String,
+        history: List<HeartVoiceClient.Turn> = emptyList(),
+    ): String? {
         if (config?.usable != true) return null
+        val historyBlock = if (history.isEmpty()) "" else
+            "之前的对话：\n" + history.joinToString("\n") { "${if (it.role == "user") "用户" else "你"}：${it.content}" } + "\n\n"
         val prompt = """你是「风起簿」的陪伴者。用户有一个愿望：「$wishTitle」。
-用户对你说：「$userText」
+${historyBlock}用户对你说：「$userText」
 温柔回应（1-3 句），不催促、不评判；如果用户表达了疲惫，认可他的感受并提议把时机改成「累了的时候」；禁止出现「任务」「逾期」「未完成」等词。直接输出回应文本，不要 JSON。"""
         return runCatching {
             heartVoiceClient.chat(config, prompt, emptyList()).trim().takeIf { it.isNotBlank() }

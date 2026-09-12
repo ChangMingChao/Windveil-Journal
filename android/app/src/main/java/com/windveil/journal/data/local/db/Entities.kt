@@ -1,6 +1,7 @@
 package com.windveil.journal.data.local.db
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -62,6 +63,16 @@ data class MemoryEntity(
     val createdAt: String,
 )
 
+
+/** 愿望对话消息（S04「和它聊聊」）：随愿望持久化，杀进程不丢。 */
+@Entity(tableName = "chat_messages", indices = [Index("wishId")])
+data class ChatMessageEntity(
+    @PrimaryKey val id: String, // UUID
+    val wishId: String,
+    val role: String, // user | assistant
+    val text: String,
+    val createdAt: String, // ISO-8601 UTC
+)
 
 /** 用户画像条目（user-profile）：来源分层，可查看可删除。 */
 @Entity(tableName = "preferences")
