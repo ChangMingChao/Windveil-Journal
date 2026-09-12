@@ -62,6 +62,7 @@ data class MemoryEntity(
     val status: String, // draft | published
     val publishedAt: String? = null,
     val createdAt: String,
+    val photos: String? = null, // 照片本机路径 JSON 数组（DB v7；收进书里时从愿望继承，可能与 wishes.photos 共享文件）
 )
 
 

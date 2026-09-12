@@ -339,6 +339,8 @@ class StandaloneRepository @Inject constructor(
                     }.getOrNull()
                 },
                 status = "draft", createdAt = now(),
+                // 照片随行：记忆页继承愿望的照片（引用同一批文件，删除时做共享引用检查）
+                photos = wish.photos,
             )
         )
         wishDao.update(wish.copy(state = "wind", lastActivityAt = now())) // publish 时才转 happened
@@ -399,7 +401,7 @@ class StandaloneRepository @Inject constructor(
         )
     }
 
-    /** 移除单张愿望照片：更新列表并清理本机文件（与随手记 removePhoto 同语义）。 */
+    /** 移除单张愿望照片：更新列表；文件可能与记忆页共享（收进书里时继承），确认无人引用再删。 */
     suspend fun removeWishPhoto(wishId: String, path: String) {
         val wish = wishDao.get(wishId) ?: return
         val remaining = decodePhotoPaths(wish.photos).filter { it != path }
@@ -409,15 +411,47 @@ class StandaloneRepository @Inject constructor(
                 lastActivityAt = now(),
             )
         )
-        runCatching { java.io.File(path).delete() }
+        if (!isPhotoReferenced(path, exceptWishId = wishId, exceptMemoryId = null)) {
+            runCatching { java.io.File(path).delete() }
+        }
     }
+
+    // ---------- 记忆页照片（DB v7，收进书里时从愿望继承）----------
+
+    /** 整体替换记忆页照片列表（新增时由 UI 先 copyToLocal 落盘再传入）。 */
+    suspend fun replaceMemoryPhotos(memoryId: String, photos: List<String>) {
+        val memory = memoryDao.get(memoryId) ?: return
+        memoryDao.update(
+            memory.copy(
+                photos = photos.takeIf { it.isNotEmpty() }?.let { gson.toJson(it) },
+            )
+        )
+    }
+
+    /** 移除单张记忆页照片：更新列表；文件可能与愿望或其他记忆页共享，确认无人引用再删。 */
+    suspend fun removeMemoryPhoto(memoryId: String, path: String) {
+        val memory = memoryDao.get(memoryId) ?: return
+        val remaining = decodePhotoPaths(memory.photos).filter { it != path }
+        memoryDao.update(memory.copy(photos = remaining.takeIf { it.isNotEmpty() }?.let { gson.toJson(it) }))
+        if (!isPhotoReferenced(path, exceptWishId = null, exceptMemoryId = memoryId)) {
+            runCatching { java.io.File(path).delete() }
+        }
+    }
+
+    /** 照片文件是否仍被（除排除项之外的）愿望或记忆页引用——共享文件删除前的引用检查。 */
+    private suspend fun isPhotoReferenced(path: String, exceptWishId: String?, exceptMemoryId: String?): Boolean =
+        wishDao.all().any { it.id != exceptWishId && path in decodePhotoPaths(it.photos) } ||
+            memoryDao.all().any { it.id != exceptMemoryId && path in decodePhotoPaths(it.photos) }
 
     // ---------- 彻底删除 ----------
 
     suspend fun deleteWishPermanently(wishId: String) {
         val wish = wishDao.get(wishId) ?: return
         calendarReminder.cancelAllForWish(wishId)
-        decodePhotoPaths(wish.photos).forEach { path -> runCatching { java.io.File(path).delete() } }
+        // 照片文件可能与记忆页共享（收进书里时继承）：只删未被引用的
+        val referenced = memoryDao.all().flatMap { decodePhotoPaths(it.photos) }.toSet()
+        decodePhotoPaths(wish.photos).filterNot { it in referenced }
+            .forEach { path -> runCatching { java.io.File(path).delete() } }
         chatDao.deleteByWish(wishId)
         wishDao.delete(wishId)
     }
@@ -465,23 +499,23 @@ class StandaloneRepository @Inject constructor(
     // ---------- 数据导出 ----------
 
     suspend fun exportJson(readPhoto: (String) -> ByteArray?): String {
+        val embedPhotos = { pathsJson: String? ->
+            gson.toJsonTree(
+                decodePhotoPaths(pathsJson).map { path ->
+                    mapOf(
+                        "path" to path,
+                        "data" to readPhoto(path)?.let { Base64.encodeToString(it, Base64.NO_WRAP) },
+                    )
+                }
+            )
+        }
         val payload = mapOf(
-            "schema_version" to 3,
+            "schema_version" to 4,
             "exported_at" to now(),
             "wishes" to wishDao.all().map { w ->
                 // 照片以 base64 内嵌（与 lite_events 同语义），覆盖实体序列化出的纯路径数组
                 val tree = gson.toJsonTree(w).asJsonObject
-                tree.add(
-                    "photos",
-                    gson.toJsonTree(
-                        decodePhotoPaths(w.photos).map { path ->
-                            mapOf(
-                                "path" to path,
-                                "data" to readPhoto(path)?.let { Base64.encodeToString(it, Base64.NO_WRAP) },
-                            )
-                        }
-                    ),
-                )
+                tree.add("photos", embedPhotos(w.photos))
                 tree
             },
             "lite_events" to liteDao.all().map { event ->
@@ -501,7 +535,11 @@ class StandaloneRepository @Inject constructor(
                     },
                 )
             },
-            "memories" to memoryDao.all(),
+            "memories" to memoryDao.all().map { m ->
+                val tree = gson.toJsonTree(m).asJsonObject
+                tree.add("photos", embedPhotos(m.photos))
+                tree
+            },
         )
         return gson.toJson(payload)
     }
@@ -509,7 +547,7 @@ class StandaloneRepository @Inject constructor(
     /**
      * 导入备份（standalone-mode 补全）：按 ID 合并——同 ID 覆盖、新 ID 插入，不删现有数据。
      * 返回 (wishes, liteEvents, memories) 三类各自导入的条数。
-     * 备份格式 v2 起照片内嵌（v3 起愿望也带照片）；v1 只保留本机仍存在的路径。
+     * 备份格式 v2 起照片内嵌（v3 起愿望、v4 起记忆页）；v1 只保留本机仍存在的路径。
      */
     suspend fun importJson(
         json: String,
@@ -520,7 +558,7 @@ class StandaloneRepository @Inject constructor(
         return db.withTransaction {
             val payload: Map<String, Any> = gson.fromJson(json, type)
             val schemaVersion = (payload["schema_version"] as? Double)?.toInt()
-            if (schemaVersion != null && schemaVersion > 3) {
+            if (schemaVersion != null && schemaVersion > 4) {
                 throw IllegalArgumentException("备份格式太新，请先升级风起簿")
             }
 
@@ -599,6 +637,8 @@ class StandaloneRepository @Inject constructor(
                         status = str(m, "status") ?: "published",
                         publishedAt = str(m, "publishedAt"),
                         createdAt = str(m, "createdAt") ?: now(),
+                        photos = decodePhotosForImport(m["photos"], schemaVersion, writePhoto, sanitizePhotos)
+                            .takeIf { it.isNotEmpty() }?.let { gson.toJson(it) },
                     )
                 )
                 memCount++
