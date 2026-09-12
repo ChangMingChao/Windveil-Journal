@@ -144,7 +144,8 @@ class HeartVoiceViewModel @Inject constructor(
             val intent = runCatching {
                 val content = heartVoiceClient.chat(cfg, CLASSIFY_PROMPT, history)
                 LlmJson.parse(content, IntentResult::class.java)?.intent
-            }.getOrNull() ?: "chat"
+            }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                .getOrNull() ?: "chat"
 
             when (intent) {
                 "record" -> {
@@ -211,11 +212,12 @@ class HeartVoiceViewModel @Inject constructor(
                     }
                 }
             }
-            // 对话后静默提炼画像（user-profile）：不阻塞、不打扰，失败跳过
+            // 先解锁输入区，再静默提炼画像（user-profile）：提炼不再锁住「说」按钮；
+            // 失败跳过；用户点「停」时随 sendJob 一起取消
+            loading.value = false
             if (intent != "chat") {
                 runCatching { repository.extractAndStorePreferences(trimmed) }
             }
-            loading.value = false
         }
     }
 
