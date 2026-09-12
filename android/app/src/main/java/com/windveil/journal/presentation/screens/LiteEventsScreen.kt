@@ -176,8 +176,7 @@ fun LiteEventsScreen(
 
 /** 已存照片的缩略图条（Coil 加载本机文件；点缩略图进编辑弹窗可删单张）。 */
 @Composable
-private fun PhotoStrip(photos: List<String>) {
-    Row(
+private fun PhotoStrip(photos: List<String>) {    Row(
         Modifier.padding(top = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -210,6 +209,34 @@ internal fun parsePhotos(json: String): List<String> = runCatching {
         object : com.google.gson.reflect.TypeToken<List<String>>() {}.type,
     ) as List<String>
 }.getOrDefault(emptyList())
+
+/** 照片宫格（3 列，点 × 删单张并回调清理）：随手记编辑弹窗与愿望详情共用。 */
+@Composable
+internal fun PhotoGrid(photos: List<String>, onRemove: (String) -> Unit) {
+    photos.chunked(3).forEach { rowPhotos ->
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            rowPhotos.forEach { path ->
+                Box(Modifier.size(72.dp)) {
+                    AsyncImage(
+                        model = File(path),
+                        contentDescription = "已选照片",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(72.dp),
+                    )
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = "移除这张照片",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .size(18.dp)
+                            .clickable { onRemove(path) },
+                    )
+                }
+            }
+        }
+    }
+}
 
 /**
  * 编辑这一条（朋友圈式，用户 2026-09-11 反馈「详情太复杂」）：
@@ -248,31 +275,9 @@ internal fun LiteEventEditDialog(
                     minLines = 2,
                 )
                 // 照片宫格：3 列排布，点 × 只从这一条里移除并删本机文件
-                photos.chunked(3).forEach { rowPhotos ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        rowPhotos.forEach { path ->
-                            Box(Modifier.size(72.dp)) {
-                                AsyncImage(
-                                    model = File(path),
-                                    contentDescription = "已选照片",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.size(72.dp),
-                                )
-                                Icon(
-                                    Icons.Filled.Close,
-                                    contentDescription = "移除这张照片",
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .size(18.dp)
-                                        .clickable {
-                                            onRemovePhoto(path)
-                                            photos = photos - path
-                                        },
-                                )
-                            }
-                        }
-                    }
+                PhotoGrid(photos) { path ->
+                    onRemovePhoto(path)
+                    photos = photos - path
                 }
                 if (photos.size < 9) {
                     OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
@@ -295,9 +300,9 @@ internal fun LiteEventEditDialog(
 
 /**
  * 复制选中的图片到应用私有目录（#18）：按 ContentResolver 拿真实 MIME 定扩展名，
- * 不再一律存 .jpg；文件名用时间戳 + 随机后缀。
+ * 不再一律存 .jpg；文件名用时间戳 + 随机后缀。随手记与愿望详情共用。
  */
-private fun copyToLocal(context: android.content.Context, uri: android.net.Uri): String? = runCatching {
+internal fun copyToLocal(context: android.content.Context, uri: android.net.Uri): String? = runCatching {
     val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
     val ext = when (mime) {
         "image/png" -> "png"

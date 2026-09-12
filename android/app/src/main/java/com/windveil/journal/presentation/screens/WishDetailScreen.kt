@@ -26,10 +26,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.AlertDialog
 import android.Manifest
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -146,6 +148,17 @@ class WishDetailViewModel @Inject constructor(
         loading.value = false
         if (memoryId.isNotBlank()) onOpenMemory(memoryId)
     }
+
+    /** 愿望照片：新增（UI 侧已 copyToLocal 落盘）→ 追加去重，最多 9 张。 */
+    fun addWishPhotos(wishId: String, paths: List<String>) = viewModelScope.launch {
+        if (paths.isEmpty()) return@launch
+        val existing = parsePhotos(wish.value?.photos.orEmpty())
+        repository.replaceWishPhotos(wishId, (existing + paths).distinct().take(9))
+    }
+
+    fun removeWishPhoto(wishId: String, path: String) = viewModelScope.launch {
+        repository.removeWishPhoto(wishId, path)
+    }
 }
 
 /** 愿望详情枢纽页（单机版）。 */
@@ -233,6 +246,7 @@ private fun DetailBody(
             }
         }
     }
+    PhotosSection(wishId = wishId, viewModel = viewModel, current = current)
     degradedNote?.let {
         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
     }
@@ -495,6 +509,27 @@ private fun TidySection(
                 onClick = { if (confirmDelete) viewModel.deletePermanently(wishId) { onBack() } else confirmDelete = true },
             ) {
                 Text(if (confirmDelete) "再点一次：彻底删除，不可恢复" else "彻底删除")
+            }
+        }
+    }
+}
+
+/** 愿望照片（DB v6）：选图落盘 + 宫格展示，点 × 移除并清理本机文件；与随手记同一管道。 */
+@Composable
+private fun PhotosSection(wishId: String, viewModel: WishDetailViewModel, current: WishEntity) {
+    val context = LocalContext.current
+    val photos = parsePhotos(current.photos.orEmpty())
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(9)) { uris ->
+        viewModel.addWishPhotos(wishId, uris.mapNotNull { copyToLocal(context, it) })
+    }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("照片", style = MaterialTheme.typography.titleSmall)
+            PhotoGrid(photos) { path -> viewModel.removeWishPhoto(wishId, path) }
+            if (photos.size < 9) {
+                OutlinedButton(
+                    onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                ) { Text(if (photos.isEmpty()) "添加照片" else "再加照片（${photos.size}/9）") }
             }
         }
     }
