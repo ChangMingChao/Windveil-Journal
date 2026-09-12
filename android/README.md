@@ -59,6 +59,10 @@
 2. 运行 `app` 到设备/模拟器；启动即进「未发生之地」，无需登录。
 3. 单元测试：`./gradlew :app:testDebugUnitTest`（时机计算、LLM 严格解析、服务端契约回归）。
 4. Room schema JSON 导出到 `app/schemas/`（`exportSchema = true`），改实体后对比/新增迁移，避免手写 SQL 漂移。
+5. 发布：按顶层 [`CHANGE-PROCESS.md`](../CHANGE-PROCESS.md) §5.2 执行——递增 `versionCode`/`versionName`，执行
+   `./gradlew :app:assembleDebug`，把 `app/build/outputs/apk/debug/app-debug.apk` 入库为
+   `../release/风起簿-v<版本>.apk`（当前发布形态为 **debug 签名**；`release` 变体未配置签名，产物不可安装，不得入库），
+   然后跑 `sh ../scripts/preflight.sh release` 并更新顶层 README 的「发布记录」台账。
 
 ## 已知边界（后续迭代项）
 

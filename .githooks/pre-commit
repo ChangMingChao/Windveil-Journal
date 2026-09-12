@@ -1,0 +1,22 @@
+#!/bin/sh
+# 风起簿 pre-commit 钩子
+# 依据：CHANGE-PROCESS.md 红线 R7 —— 未跑机械校验不得提交。
+# 启用：git config core.hooksPath .githooks
+# 应急跳过（不推荐，属违规）：git commit --no-verify
+
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+SCRIPT="$ROOT/scripts/preflight.sh"
+
+if [ ! -f "$SCRIPT" ]; then
+    echo "[提示] 未找到 scripts/preflight.sh，跳过提交前校验"
+    exit 0
+fi
+
+sh "$SCRIPT" staged
+status=$?
+
+if [ "$status" -ne 0 ]; then
+    printf '\n提交被 pre-commit 拦截（退出码 %s）。修复后重试，流程见 CHANGE-PROCESS.md\n' "$status"
+fi
+
+exit $status

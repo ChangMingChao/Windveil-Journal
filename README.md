@@ -50,6 +50,31 @@ android/                      Android 原生 App（项目主体）
 .three-tomato/config.yaml     three-tomato 生成配置存档说明
 ```
 
+## 发布记录
+
+发布包一律入库到 `release/`，文件名恒为 `release/风起簿-v<版本>.apk`（`.gitignore` 对 `release/*.apk` 例外）。
+**每个版本必须同时具备三件东西：递增的 `versionCode`/`versionName`、与该 commit 同批入库的 APK、指向该 commit 的附注 tag。**
+本表是唯一权威版本台账，`sh scripts/preflight.sh release` 会核对它与源码是否自洽。发布与提交流程见 [`CHANGE-PROCESS.md`](CHANGE-PROCESS.md)。
+
+| 版本 | 日期 | 交付物 | versionCode | git tag | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| v0.2.2 | 2026-09-09 | [`release/风起簿-v0.2.2.apk`](release/风起簿-v0.2.2.apk) | 4 | ❌ 缺失 | ⚠️ **交付物漂移**：包由 `b51133f` 构建，不含其后并入的聊天历史（DB v5）等改动；待以新版本号重发 |
+| v0.2.1 | 2026-09-09 | `release/风起簿-v0.2.1.apk`（已移除） | 3 | ❌ 缺失 | 历史版本 |
+| v0.2.0 | 2026-09-08 | `release/风起簿-v0.2.0.apk`（已移除） | 2 | ⚠️ v0.2.0 | tag 打在 `6f20d3a`（仅改版本号），该树里取不到 v0.2.0 的包 |
+| v0.1.0 | 2026-09-07 | `release/风起簿-v0.1.0.apk`（已移除） | 1 | ❌ 缺失 | 首个可下载版本 |
+
+已发布包的 sha256 指纹（用户报障时先比对指纹，确认复现对象一致）：
+
+| 版本 | sha256 |
+| --- | --- |
+| v0.2.2 | `ac69bfc476064f0a16521d41faa610a5a1cd1c900acf80e55efca4d7298623c8` |
+| v0.2.1 | `e172457d239da370078889b27ef04c3e7d9c2347f714946bd278cb4b6b6badcd` |
+| v0.2.0 | `485b75b6b37dd6dd96701beb44989968280e2a118a362c8989b2cab112b5d8db` |
+| v0.1.0 | `0d3b779d1ec1a1b57b7f70c401f42b1f7236c4eba2d844fc8e1a33465e907899` |
+
+> 历史版本的包文件已不在工作区，可用
+> `git cat-file blob <commit>:release/风起簿-v<版本>.apk > 风起簿-v<版本>.apk` 取回。
+
 ## 构建与运行
 
 1. 用 Android Studio（Hedgehog 以上）打开 `android/` 目录，等待 Gradle Sync。
